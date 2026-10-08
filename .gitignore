@@ -5,4 +5,5 @@ build/
 .env.*
 !.env.example
 coverage/
+.aptiquiz-data/
 .DS_Store

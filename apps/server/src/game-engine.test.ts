@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { BOOKLET_2026_QUESTION_SET } from "@aptiquiz/contracts";
 import { GameEngine } from "./game-engine.js";
 
@@ -109,10 +112,35 @@ test("raises adaptive difficulty after sustained correct answers", () => {
   engine.createRoom({ id: "adaptive-room", code: "ADAPT1", hostId: "host-adaptive", collegeId: "college-a", questionSetId: BOOKLET_2026_QUESTION_SET.id });
   const player = engine.joinRoom("adaptive-room", "Consistent player", "college-a");
   for (let index = 0; index < 3; index += 1) {
-    const question = engine.startGame("adaptive-room", 1_000 + index * 25_000);
+    const question = index === 0
+      ? engine.startGame("adaptive-room", 1_000)
+      : engine.advance("adaptive-room", 1_000 + index * 25_000);
+    assert.ok(question);
     const correctOptionId = BOOKLET_2026_QUESTION_SET.questions[index].correctOptionId;
     engine.submitAnswer("adaptive-room", player.player.id, { questionId: question.questionId, optionId: correctOptionId }, 2_000 + index * 25_000);
-    if (index < 2) engine.advance("adaptive-room", 3_000 + index * 25_000);
   }
   assert.equal(engine.snapshot("adaptive-room", player.player.id).adaptiveDifficulty, "hard");
+});
+
+test("restores rooms, sessions, scores and analytics after an engine restart", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aptiquiz-"));
+  const statePath = join(directory, "engine.json");
+  try {
+    const firstEngine = new GameEngine([BOOKLET_2026_QUESTION_SET], statePath);
+    firstEngine.createRoom({ id: "persistent-room", code: "PERSIST", hostId: "host-persistent", collegeId: "college-persistent", questionSetId: BOOKLET_2026_QUESTION_SET.id });
+    const player = firstEngine.joinRoom("persistent-room", "Persistent player", "college-persistent");
+    const question = firstEngine.startGame("persistent-room", 10_000);
+    const correctOptionId = BOOKLET_2026_QUESTION_SET.questions[0].correctOptionId;
+    firstEngine.submitAnswer("persistent-room", player.player.id, { questionId: question.questionId, optionId: correctOptionId }, 11_000);
+
+    const restoredEngine = new GameEngine([BOOKLET_2026_QUESTION_SET], statePath);
+    const restoredRoom = restoredEngine.listRooms().find((room) => room.id === "persistent-room");
+    assert.equal(restoredRoom?.phase, "round-results");
+    const restored = restoredEngine.joinRoom("persistent-room", "Persistent player", "college-persistent", player.player.sessionToken);
+    assert.equal(restored.reconnected, true);
+    assert.equal(restored.player.totalScore, player.player.totalScore);
+    assert.equal(restoredEngine.snapshot("persistent-room", restored.player.id).analytics.correct, 1);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

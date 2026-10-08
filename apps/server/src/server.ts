@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import type { ClientEvent, Question, QuestionSet, ServerEvent, Team } from "@aptiquiz/contracts";
 import { BOOKLET_2026_QUESTION_SET } from "@aptiquiz/contracts";
@@ -28,11 +30,19 @@ export interface ServerOptions {
 }
 
 export function createAptiQuizServer(options: ServerOptions = {}) {
-  const engine = new GameEngine([BOOKLET_2026_QUESTION_SET]);
+  const dataDirectory = process.env.APTIQUIZ_DATA_DIR ?? ".aptiquiz-data";
+  const engine = new GameEngine([BOOKLET_2026_QUESTION_SET], join(dataDirectory, "engine.json"));
   const clients = new Set<ConnectedClient>();
   const roomsByCode = new Map<string, RoomRecord>();
   const roomsById = new Map<string, RoomRecord>();
   const origin = options.origin ?? "*";
+  const persistedServerState = loadServerState(join(dataDirectory, "server.json"));
+  const restoredRoomIds = new Set(engine.listRooms().map((room) => room.id));
+  for (const record of persistedServerState) {
+    if (!restoredRoomIds.has(record.roomId)) continue;
+    roomsByCode.set(record.code, record);
+    roomsById.set(record.roomId, record);
+  }
 
   const httpServer = createServer((request, response) => {
     addCors(response, origin);
@@ -91,6 +101,7 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
         const record = { roomId, code, hostToken } satisfies RoomRecord;
         roomsByCode.set(code, record);
         roomsById.set(roomId, record);
+        persistServerState(join(dataDirectory, "server.json"), [...roomsById.values()].map(({ roomId: persistedRoomId, code: persistedCode, hostToken: persistedHostToken }) => ({ roomId: persistedRoomId, code: persistedCode, hostToken: persistedHostToken })));
         sendJson(response, 201, { ...room, hostToken });
       }).catch((error: unknown) => sendError(response, error));
       return;
@@ -239,6 +250,25 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
     if (client.roomId !== roomId || !client.playerId) throw new Error("Join this room first");
   }
 
+  for (const record of roomsById.values()) {
+    const phase = engine.snapshot(record.roomId).room.phase;
+    if (phase === "question-active") scheduleQuestionClose(record.roomId);
+    if (phase === "round-results") {
+      record.advanceTimer = setTimeout(() => {
+        try {
+          const next = engine.advance(record.roomId, Date.now());
+          if (next) {
+            broadcastSnapshot(record.roomId);
+            broadcastQuestion(record.roomId, next.questionId);
+            scheduleQuestionClose(record.roomId);
+          }
+        } catch (error) {
+          broadcastError(record.roomId, error);
+        }
+      }, 2500);
+    }
+  }
+
   return {
     engine,
     httpServer,
@@ -305,6 +335,21 @@ function createRoomCode(existing: Map<string, RoomRecord>): string {
 
   function createToken(prefix: string): string {
     return `${prefix}-${randomBytes(18).toString("hex")}`;
+  }
+
+  function loadServerState(path: string): RoomRecord[] {
+    if (!existsSync(path)) return [];
+    try {
+      const state = JSON.parse(readFileSync(path, "utf8")) as RoomRecord[];
+      return state.filter((record) => typeof record.roomId === "string" && typeof record.code === "string" && typeof record.hostToken === "string");
+    } catch (error) {
+      throw new Error(`Could not restore server state: ${error instanceof Error ? error.message : "invalid state file"}`);
+    }
+  }
+
+  function persistServerState(path: string, records: Pick<RoomRecord, "roomId" | "code" | "hostToken">[]): void {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(records), "utf8");
   }
 
   function generateQuestionDrafts(topic: Question["topic"], difficulty: Question["difficulty"], count: number): Question[] {

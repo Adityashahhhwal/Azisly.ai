@@ -64,18 +64,29 @@ function App() {
       }
     };
     const onMessage = (message: MessageEvent<string>) => {
-      const event = JSON.parse(message.data) as ServerEvent;
+      let event: ServerEvent;
+      try {
+        event = JSON.parse(message.data) as ServerEvent;
+      } catch {
+        setError("Received an invalid message from the game server.");
+        return;
+      }
       if (event.type === "room.snapshot") {
         setSnapshot(event.payload);
         setRoomId(event.payload.room.id);
         setQuestion(event.payload.currentQuestion);
-        setView(event.payload.room.phase === "complete" ? "complete" : event.payload.room.phase === "question-active" ? "question" : "lobby");
+        setRoundResult(event.payload.currentRoundResult);
+        setView(event.payload.room.phase === "complete" ? "complete" : event.payload.room.phase === "question-active" ? "question" : event.payload.room.phase === "round-results" && event.payload.currentRoundResult ? "results" : "lobby");
       }
       if (event.type === "player.reconnected") {
         setPlayerId(event.payload.playerId);
         if (event.payload.sessionToken) {
           setSessionToken(event.payload.sessionToken);
           localStorage.setItem("aptiquiz-session", event.payload.sessionToken);
+        }
+        if (event.payload.hostToken) {
+          setHostToken(event.payload.hostToken);
+          localStorage.setItem("aptiquiz-host-token", event.payload.hostToken);
         }
       }
       if (event.type === "question.started") {

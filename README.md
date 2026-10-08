@@ -56,7 +56,7 @@ When enabled, the final three questions are marked as a Clutch Round. The server
 
 ## Status
 
-The responsive React product now includes the live player flow plus dashboard navigation for Practice, AI Generator, Analytics, Leaderboard, College League, Achievements and Profile. It keeps the server-issued session and host tokens in local storage for reconnection and host control. Persistent database storage, a richer host moderation workflow and the 50-player simulator remain before deployment.
+The responsive React product now includes the live player flow plus dashboard navigation for Practice, AI Generator, Analytics, Leaderboard, College League, Achievements and Profile. It keeps the server-issued session and host tokens in local storage for reconnection and host control. Active room state, custom question sets, scores, sessions, analytics and league inputs are persisted to `.aptiquiz-data/` so a server restart can restore contests.
 
 Run the server with `npm run dev:server`, then run the web app with `npm run dev --workspace @aptiquiz/web`. Set `VITE_API_URL` and `VITE_WS_URL` when the server is not on `localhost:3001`.
 
@@ -66,7 +66,7 @@ The first demo set uses reviewed questions adapted from the supplied `Aptitude a
 
 ## Local server
 
-Run `npm run dev:server` to start the current HTTP/WebSocket server. `GET /health` verifies the process. The API is intentionally in-memory at this stage; no database or external API key is required. The desktop web client can create a demo room, enable team mode, and paste validated custom-question JSON.
+Run `npm run dev:server` to start the HTTP/WebSocket server. `GET /health` verifies the process. State is persisted locally by default in `.aptiquiz-data/`; set `APTIQUIZ_DATA_DIR` to place it elsewhere. No database or external API key is required for the current demo. The desktop web client can create a demo room, enable team mode, and paste validated custom-question JSON.
 
 ## Progress tracking
 

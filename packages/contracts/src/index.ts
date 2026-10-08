@@ -204,6 +204,7 @@ export interface GameSnapshot {
   analytics: PlayerAnalytics;
   adaptiveDifficulty: Difficulty;
   adaptiveMessage?: string;
+  currentRoundResult?: RoundResult;
 }
 
 export type ClientEvent =

@@ -19,6 +19,9 @@ import type {
   HostAnalytics,
   CollegeLeagueEntry,
 } from "@aptiquiz/contracts";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { buildLeaderboard, calculateAnswerResult, toPlayerQuestion } from "@aptiquiz/game-rules";
 
 function emptyTopicStats(): Record<Topic, TopicPerformance> {
@@ -80,13 +83,15 @@ export class GameEngine {
   private readonly rooms = new Map<string, InternalRoom>();
   private readonly sessionToPlayer = new Map<string, { roomId: string; playerId: string }>();
 
-  constructor(questionSets: readonly QuestionSet[] = []) {
+  constructor(questionSets: readonly QuestionSet[] = [], private readonly persistencePath?: string) {
     for (const questionSet of questionSets) this.questionSets.set(questionSet.id, questionSet);
+    this.restore();
   }
 
   addQuestionSet(questionSet: QuestionSet): void {
     if (questionSet.questions.length === 0) throw new Error("A question set must contain at least one question");
     this.questionSets.set(questionSet.id, questionSet);
+    this.persist();
   }
 
   createRoom(input: CreateRoomInput): PublicRoom {
@@ -107,6 +112,7 @@ export class GameEngine {
       questionStats: new Map(),
     };
     this.rooms.set(room.id, room);
+    this.persist();
     return this.publicRoom(room);
   }
 
@@ -121,6 +127,7 @@ export class GameEngine {
         const player = room.players.find((candidate) => candidate.id === session.playerId);
         if (player) {
           player.connected = true;
+          this.persist();
           return { player, reconnected: true };
         }
       }
@@ -149,6 +156,7 @@ export class GameEngine {
     };
     room.players.push(player);
     this.sessionToPlayer.set(token, { roomId, playerId: player.id });
+    this.persist();
     return { player, reconnected: false };
   }
 
@@ -156,13 +164,16 @@ export class GameEngine {
     const player = this.getRoom(roomId).players.find((candidate) => candidate.id === playerId);
     if (!player) throw new Error("Player not found");
     player.connected = false;
+    this.persist();
   }
 
   startGame(roomId: string, startedAtMs: number): PlayerQuestion {
     const room = this.getRoom(roomId);
     if (room.phase !== "lobby") throw new Error("Game has already started");
     if (room.players.length === 0) throw new Error("At least one player is required");
-    return this.startQuestion(room, 0, startedAtMs);
+    const question = this.startQuestion(room, 0, startedAtMs);
+    this.persist();
+    return question;
   }
 
   submitAnswer(roomId: string, playerId: string, submission: { questionId: string; optionId: string }, receivedAtMs: number, latencyCompensationMs = 0): AnswerResult {
@@ -193,12 +204,15 @@ export class GameEngine {
     room.questionStats.set(question.id, questionStats);
     this.updateAdaptiveDifficulty(player);
     if (room.answeredByPlayer.size === room.players.length) this.closeQuestionInternal(room);
+    this.persist();
     return result;
   }
 
   closeQuestion(roomId: string, closedAtMs = Date.now()): RoundResult {
     const room = this.getRoom(roomId);
-    return this.closeQuestionInternal(room, closedAtMs);
+    const result = this.closeQuestionInternal(room, closedAtMs);
+    this.persist();
+    return result;
   }
 
   roundResult(roomId: string): RoundResult | undefined {
@@ -214,9 +228,12 @@ export class GameEngine {
       room.phase = "complete";
       room.questionStartedAtMs = undefined;
       room.questionDeadlineMs = undefined;
+      this.persist();
       return null;
     }
-    return this.startQuestion(room, nextIndex, startedAtMs);
+    const question = this.startQuestion(room, nextIndex, startedAtMs);
+    this.persist();
+    return question;
   }
 
   snapshot(roomId: string, playerId?: string): GameSnapshot {
@@ -232,6 +249,7 @@ export class GameEngine {
       analytics: player ? this.analyticsFor(player) : emptyAnalytics(),
       adaptiveDifficulty: player?.adaptiveDifficulty ?? "medium",
       adaptiveMessage: player ? this.adaptiveMessage(player) : undefined,
+      currentRoundResult: room.phase === "round-results" ? room.lastRoundResult : undefined,
     };
   }
 
@@ -281,11 +299,61 @@ export class GameEngine {
         current.points += player.totalScore;
         current.participants.add(`${room.id}:${player.id}`);
       }
+
       byCollege.set(room.collegeId, current);
     }
     return [...byCollege.entries()]
       .sort((left, right) => right[1].points - left[1].points)
       .map(([collegeId, entry], index) => ({ rank: index + 1, collegeId, points: entry.points, participants: entry.participants.size, period }));
+  }
+
+  listRooms(): PublicRoom[] {
+    return [...this.rooms.values()].map((room) => this.publicRoom(room));
+  }
+
+  private persist(): void {
+    if (!this.persistencePath) return;
+    const state = {
+      questionSets: [...this.questionSets.values()],
+      rooms: [...this.rooms.values()].map((room) => ({
+        ...room,
+        answeredByPlayer: [...room.answeredByPlayer.entries()],
+        previousRanks: [...room.previousRanks.entries()],
+        optionOrders: [...room.optionOrders.entries()],
+        previousTeamRanks: [...room.previousTeamRanks.entries()],
+        lastRoundResult: room.lastRoundResult,
+        questionStats: [...room.questionStats.entries()].map(([questionId, stats]) => [questionId, { ...stats, incorrectOptions: [...stats.incorrectOptions.entries()] }]),
+      })),
+      sessionToPlayer: [...this.sessionToPlayer.entries()],
+    };
+    mkdirSync(dirname(this.persistencePath), { recursive: true });
+    writeFileSync(this.persistencePath, JSON.stringify(state), "utf8");
+  }
+
+  private restore(): void {
+    if (!this.persistencePath || !existsSync(this.persistencePath)) return;
+    try {
+      const state = JSON.parse(readFileSync(this.persistencePath, "utf8")) as {
+        questionSets?: QuestionSet[];
+        rooms?: Array<InternalRoom & { answeredByPlayer: [string, AnswerResult][]; previousRanks: [string, number][]; optionOrders: [string, string[]][]; previousTeamRanks: [string, number][]; questionStats: [string, { attempted: number; correct: number; incorrectOptions: [string, number][] }][] }>;
+        sessionToPlayer?: [string, { roomId: string; playerId: string }][];
+      };
+      for (const questionSet of state.questionSets ?? []) this.questionSets.set(questionSet.id, questionSet);
+      for (const saved of state.rooms ?? []) {
+        const room: InternalRoom = {
+          ...saved,
+          answeredByPlayer: new Map(saved.answeredByPlayer),
+          previousRanks: new Map(saved.previousRanks),
+          optionOrders: new Map(saved.optionOrders),
+          previousTeamRanks: new Map(saved.previousTeamRanks),
+          questionStats: new Map(saved.questionStats.map(([id, stats]) => [id, { ...stats, incorrectOptions: new Map(stats.incorrectOptions) }])),
+        };
+        this.rooms.set(room.id, room);
+      }
+      for (const [token, session] of state.sessionToPlayer ?? []) this.sessionToPlayer.set(token, session);
+    } catch (error) {
+      throw new Error(`Could not restore AptiQuiz state: ${error instanceof Error ? error.message : "invalid state file"}`);
+    }
   }
 
   private startQuestion(room: InternalRoom, questionIndex: number, startedAtMs: number): PlayerQuestion {
@@ -423,7 +491,7 @@ export class GameEngine {
   }
 
   private createSessionToken(): string {
-    return `session-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+    return `session-${randomBytes(18).toString("hex")}`;
   }
 
   private shuffle<T>(items: T[]): T[] {
