@@ -18,8 +18,10 @@ export function scoreCorrectAnswer(
   latencyCompensationMs = 0,
 ): number {
   if (!Number.isFinite(timeLimitMs) || timeLimitMs <= 0) return 0;
+  if (!Number.isFinite(receivedAtMs) || !Number.isFinite(startedAtMs) || !Number.isFinite(latencyCompensationMs)) return 0;
   const boundedCompensation = Math.min(Math.max(latencyCompensationMs, 0), MAX_LATENCY_COMPENSATION_MS);
   const elapsedMs = Math.max(0, receivedAtMs - startedAtMs - boundedCompensation);
+  if (!Number.isFinite(elapsedMs)) return 0;
   if (elapsedMs > timeLimitMs) return 0;
   const remainingRatio = Math.max(0, Math.min(1, (timeLimitMs - elapsedMs) / timeLimitMs));
   return Math.round(MINIMUM_CORRECT_SCORE + (BASE_SCORE - MINIMUM_CORRECT_SCORE) * remainingRatio);
@@ -34,6 +36,8 @@ export function canAcceptAnswer(
   alreadyAnswered: boolean,
 ): AnswerResult["reason"] | null {
   if (room.phase !== "question-active") return "not-active";
+  if (!Number.isFinite(receivedAtMs) || !Number.isFinite(room.questionDeadlineMs) || !Number.isFinite(room.questionStartedAtMs)) return "invalid-question";
+  if (!Number.isFinite(question.timeLimitMs) || question.timeLimitMs <= 0) return "invalid-question";
   if (question.id !== questionId || room.questionDeadlineMs === undefined) return "invalid-question";
   if (!question.options.some((option) => option.id === optionId)) return "invalid-option";
   if (alreadyAnswered) return "duplicate";
@@ -59,6 +63,7 @@ export function calculateAnswerResult(
   const score = correct
     ? scoreCorrectAnswer(question.timeLimitMs, receivedAtMs, room.questionStartedAtMs ?? receivedAtMs, latencyCompensationMs)
     : 0;
+  const responseTimeMs = Math.max(0, receivedAtMs - (room.questionStartedAtMs ?? receivedAtMs));
   return {
     playerId,
     questionId: submission.questionId,
@@ -68,7 +73,7 @@ export function calculateAnswerResult(
     receivedAtMs,
     topic: question.topic,
     difficulty: question.difficulty,
-    responseTimeMs: Math.max(0, receivedAtMs - (room.questionStartedAtMs ?? receivedAtMs)),
+    responseTimeMs: Number.isFinite(responseTimeMs) ? responseTimeMs : 0,
   };
 }
 
