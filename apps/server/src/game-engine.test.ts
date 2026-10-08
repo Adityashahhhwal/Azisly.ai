@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BOOKLET_2026_QUESTION_SET } from "@aptiquiz/contracts";
+import { scoreCorrectAnswer } from "@aptiquiz/game-rules";
 import { GameEngine } from "./game-engine.js";
 
 function createFixture() {
@@ -45,9 +46,19 @@ test("scores accepted answers and rejects duplicates and late submissions", () =
   assert.equal(duplicate.accepted, false);
   assert.equal(duplicate.reason, "duplicate");
 
+  const duplicateInvalidOption = engine.submitAnswer("room-1", first.player.id, { questionId: question.questionId, optionId: "not-an-option" }, 6_500);
+  assert.equal(duplicateInvalidOption.accepted, false);
+  assert.equal(duplicateInvalidOption.reason, "duplicate");
+
   const late = engine.submitAnswer("room-1", second.player.id, { questionId: question.questionId, optionId: correctOptionId }, 301_001);
   assert.equal(late.accepted, false);
   assert.equal(late.reason, "late");
+});
+
+test("guards scoring against non-finite timing inputs", () => {
+  assert.equal(scoreCorrectAnswer(300_000, 2_000, 1_000, Number.NaN), 997);
+  assert.equal(scoreCorrectAnswer(300_000, Number.NaN, 1_000), 0);
+  assert.equal(scoreCorrectAnswer(300_000, 2_000, Number.POSITIVE_INFINITY), 0);
 });
 
 test("closes a round when every player answers and advances", () => {
@@ -100,6 +111,16 @@ test("reconnects a player with the same score and identity", () => {
   assert.equal(reconnected.player.id, first.player.id);
   assert.equal(reconnected.player.totalScore, 997);
   assert.equal(reconnected.player.connected, true);
+});
+
+test("rejects duplicate generated player IDs", () => {
+  const { engine, first } = createFixture();
+  assert.throws(() => engine.joinRoom("room-1", "New player", "demo-college", undefined, first.player.id), /Player ID is already in use/);
+});
+
+test("reports no host average response time before players answer", () => {
+  const { engine } = createFixture();
+  assert.equal(engine.hostAnalytics("room-1").averageResponseTimeMs, null);
 });
 
 test("does not allow a session token to cross room boundaries", () => {
