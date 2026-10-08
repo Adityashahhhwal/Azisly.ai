@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type {
   AnswerResult,
@@ -46,6 +46,16 @@ function App() {
   const [adaptiveMessage, setAdaptiveMessage] = useState("");
   const [hostAnalytics, setHostAnalytics] = useState<HostAnalytics>();
   const [collegeLeague, setCollegeLeague] = useState<CollegeLeagueEntry[]>([]);
+  const sessionRef = useRef(sessionToken);
+  const roomCodeRef = useRef(roomCode);
+
+  useEffect(() => {
+    sessionRef.current = sessionToken;
+  }, [sessionToken]);
+
+  useEffect(() => {
+    roomCodeRef.current = roomCode;
+  }, [roomCode]);
 
   useEffect(() => {
     if (!socket) return;
@@ -55,10 +65,10 @@ function App() {
     };
     const onClose = () => {
       setConnected(false);
-      if (sessionToken && roomCode) {
+      if (sessionRef.current && roomCodeRef.current) {
         setReconnecting(true);
         window.setTimeout(() => {
-          join(roomCode);
+          join(roomCodeRef.current);
           setReconnecting(false);
         }, 1000);
       }
@@ -129,7 +139,7 @@ function App() {
     active.send(JSON.stringify(event));
   };
 
-  const join = (code = roomCode, hostTokenOverride = hostToken) => {
+  const join = (code = roomCodeRef.current, hostTokenOverride = hostToken) => {
     setError("");
     const active = connect();
     const message = JSON.stringify({
@@ -137,7 +147,7 @@ function App() {
       roomCode: code.trim().toUpperCase(),
       displayName: displayName.trim(),
       collegeId: collegeId.trim(),
-      sessionToken: sessionToken || undefined,
+      sessionToken: sessionRef.current || undefined,
       teamId: teamId.trim() || undefined,
       hostToken: hostTokenOverride || undefined,
     });
