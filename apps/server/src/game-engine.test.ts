@@ -62,6 +62,33 @@ test("closes a round when every player answers and advances", () => {
   assert.equal(engine.snapshot("room-1").room.currentQuestionIndex, 1);
 });
 
+test("includes unanswered players in timed round results without scoring them", () => {
+  const { engine, first, second } = createFixture();
+  const question = engine.startGame("room-1", 1_000);
+  engine.submitAnswer("room-1", first.player.id, { questionId: question.questionId, optionId: "a" }, 2_000);
+  const result = engine.closeQuestion("room-1", 301_000);
+  const unanswered = result.results.find((entry) => entry.playerId === second.player.id);
+  assert.equal(unanswered?.reason, "unanswered");
+  assert.equal(unanswered?.accepted, false);
+  assert.equal(unanswered?.score, 0);
+  assert.equal(second.player.answeredQuestions, 0);
+});
+
+test("filters completed college league results by completion period", () => {
+  const engine = new GameEngine([{
+    ...BOOKLET_2026_QUESTION_SET,
+    id: "single-question",
+    questions: [BOOKLET_2026_QUESTION_SET.questions[0]],
+  }]);
+  engine.createRoom({ id: "league-room", code: "LEAG1", hostId: "host-league", collegeId: "college-league", questionSetId: "single-question" });
+  const player = engine.joinRoom("league-room", "League player", "college-league");
+  const question = engine.startGame("league-room", 1_000);
+  engine.submitAnswer("league-room", player.player.id, { questionId: question.questionId, optionId: "a" }, 2_000);
+  assert.equal(engine.advance("league-room", Date.now()) , null);
+  assert.equal(engine.collegeLeague("weekly").length, 1);
+  assert.equal(engine.collegeLeague("monthly")[0]?.period, "monthly");
+});
+
 test("reconnects a player with the same score and identity", () => {
   const { engine, first } = createFixture();
   const question = engine.startGame("room-1", 1_000);

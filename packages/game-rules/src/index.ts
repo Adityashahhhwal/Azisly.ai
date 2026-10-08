@@ -17,8 +17,9 @@ export function scoreCorrectAnswer(
   startedAtMs: number,
   latencyCompensationMs = 0,
 ): number {
-  if (!Number.isFinite(timeLimitMs) || timeLimitMs <= 0) return 0;
-  const boundedCompensation = Math.min(Math.max(latencyCompensationMs, 0), MAX_LATENCY_COMPENSATION_MS);
+  if (!Number.isFinite(timeLimitMs) || timeLimitMs <= 0 || !Number.isFinite(receivedAtMs) || !Number.isFinite(startedAtMs)) return 0;
+  const safeCompensation = Number.isFinite(latencyCompensationMs) ? latencyCompensationMs : 0;
+  const boundedCompensation = Math.min(Math.max(safeCompensation, 0), MAX_LATENCY_COMPENSATION_MS);
   const elapsedMs = Math.max(0, receivedAtMs - startedAtMs - boundedCompensation);
   if (elapsedMs > timeLimitMs) return 0;
   const remainingRatio = Math.max(0, Math.min(1, (timeLimitMs - elapsedMs) / timeLimitMs));
@@ -34,9 +35,9 @@ export function canAcceptAnswer(
   alreadyAnswered: boolean,
 ): AnswerResult["reason"] | null {
   if (room.phase !== "question-active") return "not-active";
+  if (alreadyAnswered) return "duplicate";
   if (question.id !== questionId || room.questionDeadlineMs === undefined) return "invalid-question";
   if (!question.options.some((option) => option.id === optionId)) return "invalid-option";
-  if (alreadyAnswered) return "duplicate";
   if (receivedAtMs > room.questionDeadlineMs) return "late";
   return null;
 }

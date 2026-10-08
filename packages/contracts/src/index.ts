@@ -142,7 +142,7 @@ export interface AnswerResult {
   correct: boolean;
   score: number;
   receivedAtMs: number;
-  reason?: "late" | "duplicate" | "invalid-question" | "invalid-option" | "not-active";
+  reason?: "late" | "unanswered" | "duplicate" | "invalid-question" | "invalid-option" | "not-active";
   topic?: Topic;
   difficulty?: Difficulty;
   responseTimeMs?: number;

@@ -83,6 +83,12 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
         const customQuestions = payload.customQuestions === undefined ? [] : parseQuestions(payload.customQuestions);
         if (customQuestions.length > 0) {
           questionSetId = `custom-${randomUUID()}`;
+          const existingQuestionIds = new Set(
+            (requestedQuestionSetId === BOOKLET_2026_QUESTION_SET.id ? BOOKLET_2026_QUESTION_SET.questions : []).map((question) => question.id),
+          );
+          if (customQuestions.some((question) => existingQuestionIds.has(question.id))) {
+            throw new Error("customQuestions contains an ID already used by the selected question set");
+          }
           const questionSet: QuestionSet = {
             id: questionSetId,
             title: typeof payload.questionSetTitle === "string" && payload.questionSetTitle.trim() ? payload.questionSetTitle.trim() : "Custom AptiQuiz set",
@@ -193,6 +199,7 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
     if (!record) return;
     if (record.timer) clearTimeout(record.timer);
     record.timer = setTimeout(() => {
+      record.timer = undefined;
       try {
         if (engine.snapshot(roomId).room.phase === "question-active") finishRound(roomId);
       } catch (error) { broadcastError(roomId, error); }
@@ -201,26 +208,38 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
 
   function finishRound(roomId: string): void {
     const record = roomsById.get(roomId);
-    if (record?.timer) clearTimeout(record.timer);
+    if (record?.timer) {
+      clearTimeout(record.timer);
+      record.timer = undefined;
+    }
     const currentPhase = engine.snapshot(roomId).room.phase;
+    if (currentPhase !== "question-active" && currentPhase !== "round-results") return;
     const result = currentPhase === "question-active" ? engine.closeQuestion(roomId) : engine.roundResult(roomId);
     if (!result) return;
     broadcast(roomId, { type: "round.results", payload: result });
     broadcastSnapshot(roomId);
-    if (record) {
-      record.advanceTimer = setTimeout(() => {
-        try {
-          const next = engine.advance(roomId, Date.now());
-          if (next) {
-            broadcastSnapshot(roomId);
-            broadcastQuestion(roomId, next.questionId);
-            scheduleQuestionClose(roomId);
-          } else {
-            broadcastSnapshot(roomId);
-          }
-        } catch (error) { broadcastError(roomId, error); }
-      }, 2500);
-    }
+    scheduleRoundAdvance(roomId);
+  }
+
+  function scheduleRoundAdvance(roomId: string): void {
+    const record = roomsById.get(roomId);
+    if (!record) return;
+    if (record.advanceTimer) clearTimeout(record.advanceTimer);
+    record.advanceTimer = setTimeout(() => {
+      record.advanceTimer = undefined;
+      try {
+        const phase = engine.snapshot(roomId).room.phase;
+        if (phase !== "round-results" && phase !== "leaderboard") return;
+        const next = engine.advance(roomId, Date.now());
+        if (next) {
+          broadcastSnapshot(roomId);
+          broadcastQuestion(roomId, next.questionId);
+          scheduleQuestionClose(roomId);
+        } else {
+          broadcastSnapshot(roomId);
+        }
+      } catch (error) { broadcastError(roomId, error); }
+    }, 2500);
   }
 
   function broadcastQuestion(roomId: string, questionId: string): void {
@@ -259,20 +278,7 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
   for (const record of roomsById.values()) {
     const phase = engine.snapshot(record.roomId).room.phase;
     if (phase === "question-active") scheduleQuestionClose(record.roomId);
-    if (phase === "round-results") {
-      record.advanceTimer = setTimeout(() => {
-        try {
-          const next = engine.advance(record.roomId, Date.now());
-          if (next) {
-            broadcastSnapshot(record.roomId);
-            broadcastQuestion(record.roomId, next.questionId);
-            scheduleQuestionClose(record.roomId);
-          }
-        } catch (error) {
-          broadcastError(record.roomId, error);
-        }
-      }, 2500);
-    }
+    if (phase === "round-results") scheduleRoundAdvance(record.roomId);
   }
 
   return {

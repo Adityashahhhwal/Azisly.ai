@@ -217,13 +217,22 @@ function App() {
   const currentPlayer = leaderboard.find((entry) => entry.playerId === playerId);
   const changeSection = async (next: Section) => {
     setSection(next);
-    if (next === "analytics" && roomId) {
-      const response = await fetch(`${API_URL}/rooms/${roomId}/analytics`, { headers: { "x-host-token": hostToken } });
-      if (response.ok) setHostAnalytics(await response.json() as HostAnalytics);
-    }
-    if (next === "league") {
-      const response = await fetch(`${API_URL}/league?period=all-time`);
-      if (response.ok) setCollegeLeague(await response.json() as CollegeLeagueEntry[]);
+    setError("");
+    try {
+      if (next === "analytics" && roomId) {
+        const response = await fetch(`${API_URL}/rooms/${roomId}/analytics`, { headers: { "x-host-token": hostToken } });
+        const result = await response.json() as HostAnalytics | { error?: string };
+        if (!response.ok) throw new Error("error" in result && result.error ? result.error : "Could not load analytics");
+        setHostAnalytics(result as HostAnalytics);
+      }
+      if (next === "league") {
+        const response = await fetch(`${API_URL}/league?period=all-time`);
+        const result = await response.json() as CollegeLeagueEntry[] | { error?: string };
+        if (!response.ok || !Array.isArray(result)) throw new Error(!Array.isArray(result) && result.error ? result.error : "Could not load college league");
+        setCollegeLeague(result);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load dashboard data");
     }
   };
 
@@ -386,13 +395,23 @@ function GeneratorCard() {
   const [count, setCount] = useState(5);
   const [drafts, setDrafts] = useState<Array<{ id: string; text: string; options: Array<{ id: string; text: string }>; correctOptionId: string; explanation?: string }>>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const generate = async () => {
     setLoading(true);
-    const response = await fetch(`${API_URL}/question-generator`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ topic, difficulty, count }) });
-    if (response.ok) setDrafts((await response.json() as { questions: typeof drafts }).questions);
-    setLoading(false);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/question-generator`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ topic, difficulty, count }) });
+      const result = await response.json() as { questions?: typeof drafts; error?: string };
+      if (!response.ok || !result.questions) throw new Error(result.error ?? "Could not generate question drafts");
+      setDrafts(result.questions);
+    } catch (cause) {
+      setDrafts([]);
+      setError(cause instanceof Error ? cause.message : "Could not generate question drafts");
+    } finally {
+      setLoading(false);
+    }
   };
-  return <div className="generator-card"><p>Generate question drafts, review the answer and explanation, then copy approved questions into the room creator. The server remains the source of truth for scoring.</p><div className="generator-controls"><select value={topic} onChange={(event) => setTopic(event.target.value)}><option>quantitative</option><option>logical</option><option>verbal</option><option>data-interpretation</option></select><select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option>easy</option><option>medium</option><option>hard</option></select><input type="number" min="1" max="20" value={count} onChange={(event) => setCount(Number(event.target.value))} /><button className="primary-button" onClick={generate} disabled={loading}>{loading ? "Generating..." : "Generate drafts"}</button></div>{drafts.length === 0 ? <div className="draft-placeholder">Question drafts will appear here for review and approval.</div> : <div className="draft-list">{drafts.map((draft) => <article className="draft-card" key={draft.id}><strong>{draft.text}</strong><div>{draft.options.map((option) => <span className={option.id === draft.correctOptionId ? "draft-option correct" : "draft-option"} key={option.id}>{option.id.toUpperCase()}. {option.text}</span>)}</div><p>{draft.explanation}</p><button className="secondary-button">Approve draft</button></article>)}</div>}</div>;
+  return <div className="generator-card"><p>Generate question drafts, review the answer and explanation, then copy approved questions into the room creator. The server remains the source of truth for scoring.</p>{error && <div className="alert" role="alert">{error}</div>}<div className="generator-controls"><select value={topic} onChange={(event) => setTopic(event.target.value)}><option>quantitative</option><option>logical</option><option>verbal</option><option>data-interpretation</option></select><select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option>easy</option><option>medium</option><option>hard</option></select><input type="number" min="1" max="20" value={count} onChange={(event) => setCount(Number(event.target.value))} /><button className="primary-button" onClick={generate} disabled={loading}>{loading ? "Generating..." : "Generate drafts"}</button></div>{drafts.length === 0 ? <div className="draft-placeholder">Question drafts will appear here for review and approval.</div> : <div className="draft-list">{drafts.map((draft) => <article className="draft-card" key={draft.id}><strong>{draft.text}</strong><div>{draft.options.map((option) => <span className={option.id === draft.correctOptionId ? "draft-option correct" : "draft-option"} key={option.id}>{option.id.toUpperCase()}. {option.text}</span>)}</div><p>{draft.explanation}</p><button className="secondary-button">Approve draft</button></article>)}</div>}</div>;
 }
 
 function DashboardEmpty({ section, analytics }: { section: Section; analytics?: GameSnapshot["analytics"] }) {

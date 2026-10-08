@@ -2,6 +2,18 @@
 
 Last updated: 2026-10-08.
 
+## Audit log
+
+### 2026-10-08 — full feature-path audit
+
+- Added explicit `unanswered` round results so timed-out players appear in results without receiving score or analytics credit.
+- Persisted room completion timestamps and made weekly/monthly college league queries filter completed rooms by the requested period.
+- Prevented custom question IDs from colliding with IDs in the selected starter question set.
+- Preserved built-in question sets when restoring persisted custom state.
+- Made question-generator request failures visible in the web UI and ensured loading state always resets.
+- Added regression tests for unanswered submissions and league period filtering.
+- Verified with `npm run typecheck`, `npm run test:engine` (10 passing tests), and `npm run build --workspace @aptiquiz/web`.
+
 ## Completed
 
 - [x] Confirm AptiQuiz / Problem Statement 3 as the selected product.

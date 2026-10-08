@@ -60,7 +60,16 @@ interface InternalRoom extends Room {
   lastRoundResult?: RoundResult;
   previousTeamRanks: Map<string, number>;
   questionStats: Map<string, { attempted: number; correct: number; incorrectOptions: Map<string, number> }>;
+  completedAtMs?: number;
 }
+
+type PersistedRoom = Omit<InternalRoom, "answeredByPlayer" | "previousRanks" | "optionOrders" | "previousTeamRanks" | "questionStats"> & {
+  answeredByPlayer?: [string, AnswerResult][];
+  previousRanks?: [string, number][];
+  optionOrders?: [string, string[]][];
+  previousTeamRanks?: [string, number][];
+  questionStats?: [string, { attempted?: number; correct?: number; incorrectOptions?: [string, number][] }][];
+};
 
 export interface CreateRoomInput {
   id: string;
@@ -97,13 +106,15 @@ export class GameEngine {
   createRoom(input: CreateRoomInput): PublicRoom {
     if (this.rooms.has(input.id)) throw new Error("Room already exists");
     if (!this.questionSets.has(input.questionSetId)) throw new Error("Question set not found");
+    const teams = (input.teams ?? []).map((team) => ({ ...team, totalScore: 0, memberCount: 0 }));
+    if (new Set(teams.map((team) => team.id)).size !== teams.length) throw new Error("Team IDs must be unique");
     const room: InternalRoom = {
       ...input,
       phase: "lobby",
       currentQuestionIndex: -1,
       players: [],
       teamMode: input.teamMode ?? false,
-      teams: (input.teams ?? []).map((team) => ({ ...team, totalScore: 0, memberCount: 0 })),
+      teams,
       clutchRound: input.clutchRound ?? false,
       answeredByPlayer: new Map(),
       previousRanks: new Map(),
@@ -138,6 +149,7 @@ export class GameEngine {
     if (room.players.some((player) => player.displayName.toLowerCase() === displayName.trim().toLowerCase())) {
       throw new Error("Display name is already in use");
     }
+    if (room.players.some((player) => player.id === playerId)) throw new Error("Player ID is already in use");
     if (teamId && (!room.teamMode || !room.teams.some((team) => team.id === teamId))) throw new Error("Invalid team selection");
     const token = sessionToken ?? this.createSessionToken();
     const player: Player = {
@@ -226,6 +238,7 @@ export class GameEngine {
     const nextIndex = room.currentQuestionIndex + 1;
     if (nextIndex >= questionSet.questions.length) {
       room.phase = "complete";
+      room.completedAtMs = startedAtMs;
       room.questionStartedAtMs = undefined;
       room.questionDeadlineMs = undefined;
       this.persist();
@@ -260,6 +273,8 @@ export class GameEngine {
   hostAnalytics(roomId: string): HostAnalytics {
     const room = this.getRoom(roomId);
     const players = room.players;
+    const answeredCount = players.reduce((sum, player) => sum + player.answeredQuestions, 0);
+    const totalResponseTimeMs = players.reduce((sum, player) => sum + player.totalResponseTimeMs, 0);
     const topics = emptyTopicStats();
     for (const player of players) {
       for (const topic of Object.keys(topics) as Topic[]) {
@@ -282,7 +297,7 @@ export class GameEngine {
       participants: players.length,
       averageScore: players.length ? Math.round(players.reduce((sum, player) => sum + player.totalScore, 0) / players.length) : 0,
       averageAccuracy: players.length ? players.reduce((sum, player) => sum + (player.answeredQuestions ? player.correctAnswers / player.answeredQuestions : 0), 0) / players.length : 0,
-      averageResponseTimeMs: players.length ? Math.round(players.reduce((sum, player) => sum + player.totalResponseTimeMs, 0) / Math.max(1, players.reduce((sum, player) => sum + player.answeredQuestions, 0))) : null,
+      averageResponseTimeMs: answeredCount ? Math.round(totalResponseTimeMs / answeredCount) : null,
       mostDifficultQuestion: difficult,
       easiestQuestion: easy,
       mostCommonIncorrectOption: optionCounts,
@@ -292,8 +307,14 @@ export class GameEngine {
 
   collegeLeague(period: CollegeLeagueEntry["period"] = "all-time"): CollegeLeagueEntry[] {
     const byCollege = new Map<string, { points: number; participants: Set<string> }>();
+    const cutoff = period === "weekly"
+      ? Date.now() - 7 * 24 * 60 * 60 * 1000
+      : period === "monthly"
+        ? Date.now() - 30 * 24 * 60 * 60 * 1000
+        : undefined;
     for (const room of this.rooms.values()) {
       if (room.phase !== "complete") continue;
+      if (cutoff !== undefined && (room.completedAtMs === undefined || room.completedAtMs < cutoff)) continue;
       const current = byCollege.get(room.collegeId) ?? { points: 0, participants: new Set<string>() };
       for (const player of room.players) {
         current.points += player.totalScore;
@@ -303,7 +324,7 @@ export class GameEngine {
       byCollege.set(room.collegeId, current);
     }
     return [...byCollege.entries()]
-      .sort((left, right) => right[1].points - left[1].points)
+      .sort((left, right) => right[1].points - left[1].points || left[0].localeCompare(right[0]))
       .map(([collegeId, entry], index) => ({ rank: index + 1, collegeId, points: entry.points, participants: entry.participants.size, period }));
   }
 
@@ -335,18 +356,20 @@ export class GameEngine {
     try {
       const state = JSON.parse(readFileSync(this.persistencePath, "utf8")) as {
         questionSets?: QuestionSet[];
-        rooms?: Array<InternalRoom & { answeredByPlayer: [string, AnswerResult][]; previousRanks: [string, number][]; optionOrders: [string, string[]][]; previousTeamRanks: [string, number][]; questionStats: [string, { attempted: number; correct: number; incorrectOptions: [string, number][] }][] }>;
+        rooms?: PersistedRoom[];
         sessionToPlayer?: [string, { roomId: string; playerId: string }][];
       };
-      for (const questionSet of state.questionSets ?? []) this.questionSets.set(questionSet.id, questionSet);
+      for (const questionSet of state.questionSets ?? []) {
+        if (!this.questionSets.has(questionSet.id)) this.questionSets.set(questionSet.id, questionSet);
+      }
       for (const saved of state.rooms ?? []) {
         const room: InternalRoom = {
           ...saved,
-          answeredByPlayer: new Map(saved.answeredByPlayer),
-          previousRanks: new Map(saved.previousRanks),
-          optionOrders: new Map(saved.optionOrders),
-          previousTeamRanks: new Map(saved.previousTeamRanks),
-          questionStats: new Map(saved.questionStats.map(([id, stats]) => [id, { ...stats, incorrectOptions: new Map(stats.incorrectOptions) }])),
+          answeredByPlayer: new Map(saved.answeredByPlayer ?? []),
+          previousRanks: new Map(saved.previousRanks ?? []),
+          optionOrders: new Map(saved.optionOrders ?? []),
+          previousTeamRanks: new Map(saved.previousTeamRanks ?? []),
+          questionStats: new Map((saved.questionStats ?? []).map(([id, stats]) => [id, { attempted: stats.attempted ?? 0, correct: stats.correct ?? 0, incorrectOptions: new Map(stats.incorrectOptions ?? []) }])),
         };
         this.rooms.set(room.id, room);
       }
@@ -378,10 +401,25 @@ export class GameEngine {
     const leaderboard = buildLeaderboard(room.players, new Map(previous.map((entry) => [entry.playerId, entry.rank])));
     room.previousRanks = new Map(leaderboard.map((entry) => [entry.playerId, entry.rank]));
     room.previousTeamRanks = new Map(this.teamLeaderboard(room).map((entry) => [entry.id, entry.rank]));
+    const results = [...room.answeredByPlayer.values()];
+    for (const player of room.players) {
+      if (room.answeredByPlayer.has(player.id)) continue;
+      results.push({
+        playerId: player.id,
+        questionId: question.id,
+        accepted: false,
+        correct: false,
+        score: 0,
+        receivedAtMs: _closedAtMs,
+        reason: "unanswered",
+        topic: question.topic,
+        difficulty: question.difficulty,
+      });
+    }
     const roundResult: RoundResult = {
       questionId: question.id,
       correctOptionId: question.correctOptionId,
-      results: [...room.answeredByPlayer.values()],
+      results,
       leaderboard,
     };
     room.lastRoundResult = roundResult;
