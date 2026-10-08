@@ -1,0 +1,10 @@
+{
+  "name": "@aptiquiz/server",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@aptiquiz/contracts": "*",
+    "@aptiquiz/game-rules": "*",
+    "ws": "^8.18.0"
+  }
+}

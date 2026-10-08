@@ -1,0 +1,7 @@
+{
+  "name": "@aptiquiz/game-rules",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@aptiquiz/contracts": "*" }
+}
