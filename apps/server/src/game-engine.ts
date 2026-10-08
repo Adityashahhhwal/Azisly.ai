@@ -124,6 +124,7 @@ export class GameEngine {
           return { player, reconnected: true };
         }
       }
+      if (session && session.roomId !== roomId) throw new Error("This session belongs to another room");
     }
 
     if (room.players.length >= 50) throw new Error("Room is full");

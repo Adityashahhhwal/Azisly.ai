@@ -71,3 +71,48 @@ test("reconnects a player with the same score and identity", () => {
   assert.equal(reconnected.player.totalScore, 955);
   assert.equal(reconnected.player.connected, true);
 });
+
+test("does not allow a session token to cross room boundaries", () => {
+  const engine = new GameEngine([BOOKLET_2026_QUESTION_SET]);
+  engine.createRoom({ id: "room-a", code: "AAA111", hostId: "host-a", collegeId: "college-a", questionSetId: BOOKLET_2026_QUESTION_SET.id });
+  engine.createRoom({ id: "room-b", code: "BBB222", hostId: "host-b", collegeId: "college-b", questionSetId: BOOKLET_2026_QUESTION_SET.id });
+  const player = engine.joinRoom("room-a", "Asha", "college-a");
+  assert.throws(() => engine.joinRoom("room-b", "Asha", "college-b", player.player.sessionToken), /another room/);
+});
+
+test("calculates team totals and player analytics from server answers", () => {
+  const engine = new GameEngine([BOOKLET_2026_QUESTION_SET]);
+  engine.createRoom({
+    id: "team-room",
+    code: "TEAM99",
+    hostId: "host-team",
+    collegeId: "college-team",
+    questionSetId: BOOKLET_2026_QUESTION_SET.id,
+    teamMode: true,
+    teams: [{ id: "team-1", name: "Alpha" }, { id: "team-2", name: "Beta" }],
+  });
+  const alpha = engine.joinRoom("team-room", "Alpha player", "college-team", undefined, undefined, "team-1");
+  const beta = engine.joinRoom("team-room", "Beta player", "college-team", undefined, undefined, "team-2");
+  const question = engine.startGame("team-room", 1_000);
+  const correctOptionId = BOOKLET_2026_QUESTION_SET.questions[0].correctOptionId;
+  engine.submitAnswer("team-room", alpha.player.id, { questionId: question.questionId, optionId: correctOptionId }, 2_000);
+  engine.submitAnswer("team-room", beta.player.id, { questionId: question.questionId, optionId: "invalid" }, 2_100);
+  const snapshot = engine.snapshot("team-room", alpha.player.id);
+  assert.equal(snapshot.teamLeaderboard.find((team) => team.id === "team-1")?.totalScore, 955);
+  assert.equal(snapshot.analytics.correct, 1);
+  assert.equal(snapshot.analytics.accuracy, 1);
+  assert.equal(snapshot.analytics.topics[BOOKLET_2026_QUESTION_SET.questions[0].topic].correct, 1);
+});
+
+test("raises adaptive difficulty after sustained correct answers", () => {
+  const engine = new GameEngine([BOOKLET_2026_QUESTION_SET]);
+  engine.createRoom({ id: "adaptive-room", code: "ADAPT1", hostId: "host-adaptive", collegeId: "college-a", questionSetId: BOOKLET_2026_QUESTION_SET.id });
+  const player = engine.joinRoom("adaptive-room", "Consistent player", "college-a");
+  for (let index = 0; index < 3; index += 1) {
+    const question = engine.startGame("adaptive-room", 1_000 + index * 25_000);
+    const correctOptionId = BOOKLET_2026_QUESTION_SET.questions[index].correctOptionId;
+    engine.submitAnswer("adaptive-room", player.player.id, { questionId: question.questionId, optionId: correctOptionId }, 2_000 + index * 25_000);
+    if (index < 2) engine.advance("adaptive-room", 3_000 + index * 25_000);
+  }
+  assert.equal(engine.snapshot("adaptive-room", player.player.id).adaptiveDifficulty, "hard");
+});

@@ -30,6 +30,7 @@ Last updated: 2026-10-08.
 - [x] Add server-authoritative adaptive difficulty signals, player analytics, readiness scoring and weakness recommendations.
 - [x] Add clutch rounds, host analytics/export endpoint, AI-assisted question drafts and college league endpoint.
 - [x] Add responsive dashboard navigation, post-quiz insights, badges and reconnection status UI.
+- [x] Add regression coverage for cross-room session isolation, team analytics and adaptive difficulty.
 - [ ] Build the host authoring and moderation interfaces.
 - [ ] Optimize the player UI for phones after the desktop flow is stable.
 - [ ] Add the 50-player simulator under `scripts/simulate-50-players`.
