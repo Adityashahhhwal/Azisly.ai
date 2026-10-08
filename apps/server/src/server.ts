@@ -54,17 +54,17 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
       sendJson(response, 200, { status: "ok", service: "aptiquiz-server" });
       return;
     }
+    if (request.method === "GET" && new URL(request.url ?? "/", "http://localhost").pathname === "/league") {
+      const period = new URL(request.url ?? "/", "http://localhost").searchParams.get("period");
+      const selectedPeriod = period === "weekly" || period === "monthly" ? period : "all-time";
+      sendJson(response, 200, engine.collegeLeague(selectedPeriod));
+      return;
+    }
     const analyticsMatch = request.method === "GET" ? request.url?.match(/^\/rooms\/([^/]+)\/analytics$/) : undefined;
     if (analyticsMatch) {
       const record = roomsByCode.get(analyticsMatch[1]) ?? roomsById.get(analyticsMatch[1]);
       if (!record) {
         sendJson(response, 404, { error: "Room not found" });
-        return;
-      }
-      if (request.method === "GET" && request.url?.startsWith("/league")) {
-        const period = new URL(request.url, "http://localhost").searchParams.get("period");
-        const selectedPeriod = period === "weekly" || period === "monthly" ? period : "all-time";
-        sendJson(response, 200, engine.collegeLeague(selectedPeriod));
         return;
       }
       if (request.headers["x-host-token"] !== record.hostToken) {
@@ -111,7 +111,7 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
         const payload = asRecord(body);
         const topic = requiredString(payload.topic ?? "quantitative", "topic");
         const difficulty = requiredString(payload.difficulty ?? "medium", "difficulty");
-        const count = typeof payload.count === "number" ? Math.max(1, Math.min(20, Math.floor(payload.count))) : 5;
+        const count = typeof payload.count === "number" && Number.isFinite(payload.count) ? Math.max(1, Math.min(20, Math.floor(payload.count))) : 5;
         if (!isTopic(topic) || !isDifficulty(difficulty)) throw new Error("Invalid topic or difficulty");
         sendJson(response, 200, { questions: generateQuestionDrafts(topic, difficulty, count) });
       }).catch((error: unknown) => sendError(response, error));
@@ -141,6 +141,12 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
       if (event.type === "room.join") {
         const record = roomsByCode.get(event.roomCode.toUpperCase());
         if (!record) throw new Error("Room not found");
+        const previousRoomId = client.roomId;
+        const previousPlayerId = client.playerId;
+        if (previousRoomId && previousPlayerId && previousRoomId !== record.roomId) {
+          engine.disconnect(previousRoomId, previousPlayerId);
+          broadcastSnapshot(previousRoomId);
+        }
         const joined = engine.joinRoom(record.roomId, event.displayName, event.collegeId, event.sessionToken, undefined, event.teamId);
         client.roomId = record.roomId;
         client.playerId = joined.player.id;
@@ -301,7 +307,7 @@ function sendError(response: ServerResponse, error: unknown): void {
 
 function addCors(response: ServerResponse, origin: string): void {
   response.setHeader("access-control-allow-origin", origin);
-  response.setHeader("access-control-allow-headers", "content-type");
+  response.setHeader("access-control-allow-headers", "content-type, x-host-token");
   response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
 }
 
@@ -363,7 +369,7 @@ function generateQuestionDrafts(topic: Question["topic"], difficulty: Question["
     };
     return Array.from({ length: count }, (_, index) => {
       const draft = templates[topic](index);
-      return { id: `generated-${randomUUID()}`, text: draft.text, options: draft.options.map((text, optionIndex) => ({ id: String.fromCharCode(97 + optionIndex), text })), correctOptionId: String.fromCharCode(97 + draft.correct), topic, difficulty, timeLimitMs: difficulty === "hard" ? 15000 : difficulty === "easy" ? 25000 : 20000, explanation: draft.explanation };
+      return { id: `generated-${randomUUID()}`, text: draft.text, options: draft.options.map((text, optionIndex) => ({ id: String.fromCharCode(97 + optionIndex), text })), correctOptionId: String.fromCharCode(97 + draft.correct), topic, difficulty, timeLimitMs: 300000, explanation: draft.explanation };
     });
 }
 
@@ -399,7 +405,7 @@ function parseQuestions(value: unknown): Question[] {
         correctOptionId,
         topic,
         difficulty,
-        timeLimitMs: typeof item.timeLimitMs === "number" && item.timeLimitMs >= 5000 && item.timeLimitMs <= 300000 ? item.timeLimitMs : 20000,
+        timeLimitMs: typeof item.timeLimitMs === "number" && item.timeLimitMs >= 5000 && item.timeLimitMs <= 300000 ? item.timeLimitMs : 300000,
         imageUrl: typeof item.imageUrl === "string" ? item.imageUrl : undefined,
         tableMarkdown: typeof item.tableMarkdown === "string" ? item.tableMarkdown : undefined,
         explanation: typeof item.explanation === "string" ? item.explanation : undefined,

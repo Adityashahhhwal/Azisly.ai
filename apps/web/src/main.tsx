@@ -48,6 +48,8 @@ function App() {
   const [collegeLeague, setCollegeLeague] = useState<CollegeLeagueEntry[]>([]);
   const sessionRef = useRef(sessionToken);
   const roomCodeRef = useRef(roomCode);
+  const hostTokenRef = useRef(hostToken);
+  const reconnectTimerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     sessionRef.current = sessionToken;
@@ -58,16 +60,26 @@ function App() {
   }, [roomCode]);
 
   useEffect(() => {
+    hostTokenRef.current = hostToken;
+  }, [hostToken]);
+
+  useEffect(() => {
     if (!socket) return;
     const onOpen = () => {
+      if (reconnectTimerRef.current !== undefined) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = undefined;
+      }
       setConnected(true);
       setReconnecting(false);
     };
     const onClose = () => {
       setConnected(false);
       if (sessionRef.current && roomCodeRef.current) {
+        if (reconnectTimerRef.current !== undefined) return;
         setReconnecting(true);
-        window.setTimeout(() => {
+        reconnectTimerRef.current = window.setTimeout(() => {
+          reconnectTimerRef.current = undefined;
           join(roomCodeRef.current);
           setReconnecting(false);
         }, 1000);
@@ -123,8 +135,12 @@ function App() {
     };
   }, [socket]);
 
+  useEffect(() => () => {
+    if (reconnectTimerRef.current !== undefined) window.clearTimeout(reconnectTimerRef.current);
+  }, []);
+
   const connect = () => {
-    if (socket?.readyState === WebSocket.OPEN) return socket;
+    if (socket && socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) return socket;
     const next = new WebSocket(WS_URL);
     setSocket(next);
     return next;
@@ -139,7 +155,7 @@ function App() {
     active.send(JSON.stringify(event));
   };
 
-  const join = (code = roomCodeRef.current, hostTokenOverride = hostToken) => {
+  const join = (code = roomCodeRef.current, hostTokenOverride = hostTokenRef.current) => {
     setError("");
     const active = connect();
     const message = JSON.stringify({
@@ -148,7 +164,7 @@ function App() {
       displayName: displayName.trim(),
       collegeId: collegeId.trim(),
       sessionToken: sessionRef.current || undefined,
-      teamId: teamId.trim() || undefined,
+      teamId: teamMode ? teamId.trim() || undefined : undefined,
       hostToken: hostTokenOverride || undefined,
     });
     if (active.readyState === WebSocket.OPEN) active.send(message);
@@ -174,6 +190,9 @@ function App() {
       const result = await response.json() as { code?: string; id?: string; error?: string };
       if (!response.ok || !result.code) throw new Error(result.error ?? "Could not create room");
       const createdHostToken = (result as { hostToken?: string }).hostToken ?? "";
+      sessionRef.current = "";
+      setSessionToken("");
+      localStorage.removeItem("aptiquiz-session");
       setHostToken(createdHostToken);
       localStorage.setItem("aptiquiz-host-token", createdHostToken);
       setRoomCode(result.code);
@@ -259,7 +278,7 @@ function JoinView(props: {
       <label>Display name<input value={props.displayName} onChange={(event) => props.setDisplayName(event.target.value)} placeholder="e.g. Asha Sharma" /></label>
       <label>College ID<input value={props.collegeId} onChange={(event) => props.setCollegeId(event.target.value)} placeholder="demo-college" /></label>
       <label>Room code<input className="code-input" value={props.roomCode} onChange={(event) => props.setRoomCode(event.target.value.toUpperCase())} placeholder="ABC123" maxLength={6} /></label>
-      <label>Team ID (optional)<input value={props.teamId} onChange={(event) => props.setTeamId(event.target.value)} placeholder="team-1" /></label>
+      <label>Team ID (optional)<input value={props.teamId} disabled={!props.teamMode} onChange={(event) => props.setTeamId(event.target.value)} placeholder="team-1" /></label>
       <label className="checkbox-label"><input type="checkbox" checked={props.teamMode} onChange={(event) => props.setTeamMode(event.target.checked)} /> Enable team contest</label>
       {props.teamMode && <label>Team names<input value={props.teamNames} onChange={(event) => props.setTeamNames(event.target.value)} placeholder="Red Team, Blue Team" /></label>}
       <label className="checkbox-label"><input type="checkbox" checked={props.clutchRound} onChange={(event) => props.setClutchRound(event.target.checked)} /> Add final 3-question Clutch Round (+50%)</label>

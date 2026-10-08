@@ -39,13 +39,13 @@ test("scores accepted answers and rejects duplicates and late submissions", () =
   const accepted = engine.submitAnswer("room-1", first.player.id, { questionId: question.questionId, optionId: correctOptionId }, 5_000);
   assert.equal(accepted.accepted, true);
   assert.equal(accepted.correct, true);
-  assert.equal(accepted.score, 820);
+  assert.equal(accepted.score, 988);
 
   const duplicate = engine.submitAnswer("room-1", first.player.id, { questionId: question.questionId, optionId: correctOptionId }, 6_000);
   assert.equal(duplicate.accepted, false);
   assert.equal(duplicate.reason, "duplicate");
 
-  const late = engine.submitAnswer("room-1", second.player.id, { questionId: question.questionId, optionId: correctOptionId }, 21_001);
+  const late = engine.submitAnswer("room-1", second.player.id, { questionId: question.questionId, optionId: correctOptionId }, 301_001);
   assert.equal(late.accepted, false);
   assert.equal(late.reason, "late");
 });
@@ -71,7 +71,7 @@ test("reconnects a player with the same score and identity", () => {
   const reconnected = engine.joinRoom("room-1", "Asha", "demo-college", first.player.sessionToken);
   assert.equal(reconnected.reconnected, true);
   assert.equal(reconnected.player.id, first.player.id);
-  assert.equal(reconnected.player.totalScore, 955);
+  assert.equal(reconnected.player.totalScore, 997);
   assert.equal(reconnected.player.connected, true);
 });
 
@@ -101,7 +101,7 @@ test("calculates team totals and player analytics from server answers", () => {
   engine.submitAnswer("team-room", alpha.player.id, { questionId: question.questionId, optionId: correctOptionId }, 2_000);
   engine.submitAnswer("team-room", beta.player.id, { questionId: question.questionId, optionId: "invalid" }, 2_100);
   const snapshot = engine.snapshot("team-room", alpha.player.id);
-  assert.equal(snapshot.teamLeaderboard.find((team) => team.id === "team-1")?.totalScore, 955);
+  assert.equal(snapshot.teamLeaderboard.find((team) => team.id === "team-1")?.totalScore, 997);
   assert.equal(snapshot.analytics.correct, 1);
   assert.equal(snapshot.analytics.accuracy, 1);
   assert.equal(snapshot.analytics.topics[BOOKLET_2026_QUESTION_SET.questions[0].topic].correct, 1);

@@ -20,7 +20,7 @@ export const BOOKLET_2026_QUESTION_SET: QuestionSet = {
       correctOptionId: "c",
       topic: "logical",
       difficulty: "medium",
-      timeLimitMs: 20000,
+      timeLimitMs: 300000,
       explanation: "The booklet answer key marks option C.",
     },
     {
@@ -35,7 +35,7 @@ export const BOOKLET_2026_QUESTION_SET: QuestionSet = {
       correctOptionId: "c",
       topic: "logical",
       difficulty: "easy",
-      timeLimitMs: 15000,
+      timeLimitMs: 300000,
       explanation: "Two interleaved sequences increase by three: 6, 7, 8, 9 and 9, 10, 11.",
     },
     {
@@ -50,7 +50,7 @@ export const BOOKLET_2026_QUESTION_SET: QuestionSet = {
       correctOptionId: "b",
       topic: "quantitative",
       difficulty: "medium",
-      timeLimitMs: 20000,
+      timeLimitMs: 300000,
       explanation: "The booklet answer key marks option B.",
     },
     {
@@ -65,7 +65,7 @@ export const BOOKLET_2026_QUESTION_SET: QuestionSet = {
       correctOptionId: "c",
       topic: "verbal",
       difficulty: "medium",
-      timeLimitMs: 25000,
+      timeLimitMs: 300000,
       explanation: "The booklet answer key marks option C.",
     },
     {
@@ -80,7 +80,7 @@ export const BOOKLET_2026_QUESTION_SET: QuestionSet = {
       correctOptionId: "a",
       topic: "verbal",
       difficulty: "medium",
-      timeLimitMs: 25000,
+      timeLimitMs: 300000,
       explanation: "The booklet answer key marks option A.",
     },
     {
@@ -95,7 +95,7 @@ export const BOOKLET_2026_QUESTION_SET: QuestionSet = {
       correctOptionId: "b",
       topic: "logical",
       difficulty: "hard",
-      timeLimitMs: 30000,
+      timeLimitMs: 300000,
       explanation: "The booklet answer key marks option B.",
     },
     {
@@ -110,7 +110,7 @@ export const BOOKLET_2026_QUESTION_SET: QuestionSet = {
       correctOptionId: "b",
       topic: "logical",
       difficulty: "easy",
-      timeLimitMs: 20000,
+      timeLimitMs: 300000,
       explanation: "Z is the brother of P, and P is married to R.",
     },
     {
@@ -125,7 +125,7 @@ export const BOOKLET_2026_QUESTION_SET: QuestionSet = {
       correctOptionId: "b",
       topic: "logical",
       difficulty: "easy",
-      timeLimitMs: 15000,
+      timeLimitMs: 300000,
       explanation: "The booklet answer key marks option B.",
     },
     {
@@ -140,7 +140,7 @@ export const BOOKLET_2026_QUESTION_SET: QuestionSet = {
       correctOptionId: "b",
       topic: "data-interpretation",
       difficulty: "medium",
-      timeLimitMs: 30000,
+      timeLimitMs: 300000,
       explanation: "Post-lockdown revenue is Rs.60012; 33.33% + 8.33% is approximately 41.66%, giving Rs.25005 in the booklet options.",
     },
     {
@@ -155,7 +155,7 @@ export const BOOKLET_2026_QUESTION_SET: QuestionSet = {
       correctOptionId: "b",
       topic: "data-interpretation",
       difficulty: "medium",
-      timeLimitMs: 25000,
+      timeLimitMs: 300000,
       explanation: "Weighted score: 9 + 9 + 24 + 40 = 82. The booklet answer key marks option B.",
     },
   ],
