@@ -106,10 +106,16 @@ export class GameEngine {
   createRoom(input: CreateRoomInput): PublicRoom {
     if (this.rooms.has(input.id)) throw new Error("Room already exists");
     if (!this.questionSets.has(input.questionSetId)) throw new Error("Question set not found");
+    const normalizedCode = input.code.trim().toUpperCase();
+    if (!normalizedCode) throw new Error("Room code is required");
+    if ([...this.rooms.values()].some((room) => room.code === normalizedCode)) throw new Error("Room code is already in use");
     const teams = (input.teams ?? []).map((team) => ({ ...team, totalScore: 0, memberCount: 0 }));
     if (new Set(teams.map((team) => team.id)).size !== teams.length) throw new Error("Team IDs must be unique");
+    if (input.teamMode && teams.length < 2) throw new Error("A team contest requires at least two teams");
+    if (new Set(teams.map((team) => team.name.trim().toLowerCase())).size !== teams.length) throw new Error("Team names must be unique");
     const room: InternalRoom = {
       ...input,
+      code: normalizedCode,
       phase: "lobby",
       currentQuestionIndex: -1,
       players: [],
@@ -129,33 +135,35 @@ export class GameEngine {
 
   joinRoom(roomId: string, displayName: string, collegeId: string, sessionToken?: string, playerId = `player-${(this.rooms.get(roomId)?.players.length ?? 0) + 1}`, teamId?: string): JoinResult {
     const room = this.getRoom(roomId);
-    if (!displayName.trim()) throw new Error("Display name is required");
-    if (room.phase !== "lobby" && !sessionToken) throw new Error("The game has already started");
+    const normalizedName = typeof displayName === "string" ? displayName.trim() : "";
+    const normalizedCollegeId = typeof collegeId === "string" ? collegeId.trim() : "";
+    if (!normalizedName || normalizedName.length > 60 || /[\u0000-\u001f\u007f]/.test(normalizedName)) throw new Error("Display name must be 1 to 60 characters");
+    if (!normalizedCollegeId || normalizedCollegeId.length > 100 || /[\u0000-\u001f\u007f]/.test(normalizedCollegeId)) throw new Error("College ID must be 1 to 100 characters");
 
     if (sessionToken) {
       const session = this.sessionToPlayer.get(sessionToken);
       if (session?.roomId === roomId) {
         const player = room.players.find((candidate) => candidate.id === session.playerId);
-        if (player) {
-          player.connected = true;
-          this.persist();
-          return { player, reconnected: true };
-        }
+        if (!player || player.sessionToken !== sessionToken) throw new Error("Invalid session token");
+        player.connected = true;
+        this.persist();
+        return { player, reconnected: true };
       }
-      if (session && session.roomId !== roomId) throw new Error("This session belongs to another room");
+      if (!session) throw new Error("Invalid session token");
     }
 
+    if (room.phase !== "lobby") throw new Error("The game has already started");
     if (room.players.length >= 50) throw new Error("Room is full");
-    if (room.players.some((player) => player.displayName.toLowerCase() === displayName.trim().toLowerCase())) {
+    if (room.players.some((player) => player.displayName.toLowerCase() === normalizedName.toLowerCase())) {
       throw new Error("Display name is already in use");
     }
     if (room.players.some((player) => player.id === playerId)) throw new Error("Player ID is already in use");
     if (teamId && (!room.teamMode || !room.teams.some((team) => team.id === teamId))) throw new Error("Invalid team selection");
-    const token = sessionToken ?? this.createSessionToken();
+    const token = this.createSessionToken();
     const player: Player = {
       id: playerId,
-      displayName: displayName.trim(),
-      collegeId,
+      displayName: normalizedName,
+      collegeId: normalizedCollegeId,
       sessionToken: token,
       connected: true,
       totalScore: 0,

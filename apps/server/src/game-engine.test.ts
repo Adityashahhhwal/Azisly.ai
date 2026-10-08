@@ -123,12 +123,27 @@ test("reports no host average response time before players answer", () => {
   assert.equal(engine.hostAnalytics("room-1").averageResponseTimeMs, null);
 });
 
-test("does not allow a session token to cross room boundaries", () => {
+test("starts a fresh identity when a player joins another room", () => {
   const engine = new GameEngine([BOOKLET_2026_QUESTION_SET]);
   engine.createRoom({ id: "room-a", code: "AAA111", hostId: "host-a", collegeId: "college-a", questionSetId: BOOKLET_2026_QUESTION_SET.id });
   engine.createRoom({ id: "room-b", code: "BBB222", hostId: "host-b", collegeId: "college-b", questionSetId: BOOKLET_2026_QUESTION_SET.id });
   const player = engine.joinRoom("room-a", "Asha", "college-a");
-  assert.throws(() => engine.joinRoom("room-b", "Asha", "college-b", player.player.sessionToken), /another room/);
+  const joined = engine.joinRoom("room-b", "Asha", "college-b", player.player.sessionToken);
+  assert.notEqual(joined.player.sessionToken, player.player.sessionToken);
+  assert.equal(joined.reconnected, false);
+});
+
+test("rejects unknown session tokens from joining an active contest", () => {
+  const { engine } = createFixture();
+  engine.startGame("room-1", 1_000);
+  assert.throws(() => engine.joinRoom("room-1", "Late player", "demo-college", "invalid-session"), /Invalid session token|already started/);
+});
+
+test("rejects duplicate room codes and team contests without two teams", () => {
+  const engine = new GameEngine([BOOKLET_2026_QUESTION_SET]);
+  engine.createRoom({ id: "room-a", code: "AAA111", hostId: "host-a", collegeId: "college-a", questionSetId: BOOKLET_2026_QUESTION_SET.id });
+  assert.throws(() => engine.createRoom({ id: "room-b", code: "aaa111", hostId: "host-b", collegeId: "college-b", questionSetId: BOOKLET_2026_QUESTION_SET.id }), /already in use/);
+  assert.throws(() => engine.createRoom({ id: "team-room", code: "TEAM01", hostId: "host-team", collegeId: "college-team", questionSetId: BOOKLET_2026_QUESTION_SET.id, teamMode: true }), /at least two teams/);
 });
 
 test("calculates team totals and player analytics from server answers", () => {

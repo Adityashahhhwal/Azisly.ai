@@ -8,6 +8,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:engine": "tsx --test apps/server/src/game-engine.test.ts",
+    "test:server": "tsx --test apps/server/src/server.test.ts",
     "dev:server": "tsx apps/server/src/index.ts"
   },
   "devDependencies": {

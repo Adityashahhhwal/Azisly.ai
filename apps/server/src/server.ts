@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
@@ -27,10 +27,11 @@ interface RoomRecord {
 export interface ServerOptions {
   port?: number;
   origin?: string;
+  dataDirectory?: string;
 }
 
 export function createAptiQuizServer(options: ServerOptions = {}) {
-  const dataDirectory = process.env.APTIQUIZ_DATA_DIR ?? ".aptiquiz-data";
+  const dataDirectory = options.dataDirectory ?? process.env.APTIQUIZ_DATA_DIR ?? ".aptiquiz-data";
   const engine = new GameEngine([BOOKLET_2026_QUESTION_SET], join(dataDirectory, "engine.json"));
   const clients = new Set<ConnectedClient>();
   const roomsByCode = new Map<string, RoomRecord>();
@@ -50,8 +51,21 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
       response.writeHead(204).end();
       return;
     }
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
     if (request.method === "GET" && request.url === "/health") {
       sendJson(response, 200, { status: "ok", service: "aptiquiz-server" });
+      return;
+    }
+    const publicRoomMatch = request.method === "GET" ? pathname.match(/^\/rooms\/([^/]+)$/) : undefined;
+    if (publicRoomMatch) {
+      const lookup = decodeURIComponent(publicRoomMatch[1]);
+      const record = roomsByCode.get(lookup.toUpperCase()) ?? roomsById.get(lookup);
+      if (!record) {
+        sendJson(response, 404, { error: "Room not found" });
+        return;
+      }
+      const room = engine.snapshot(record.roomId).room;
+      sendJson(response, 200, { id: room.id, code: room.code, phase: room.phase, teamMode: room.teamMode, teams: room.teams.map(({ id, name }) => ({ id, name })) });
       return;
     }
     if (request.method === "GET" && new URL(request.url ?? "/", "http://localhost").pathname === "/league") {
@@ -60,7 +74,7 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
       sendJson(response, 200, engine.collegeLeague(selectedPeriod));
       return;
     }
-    const analyticsMatch = request.method === "GET" ? request.url?.match(/^\/rooms\/([^/]+)\/analytics$/) : undefined;
+    const analyticsMatch = request.method === "GET" ? pathname.match(/^\/rooms\/([^/]+)\/analytics$/) : undefined;
     if (analyticsMatch) {
       const record = roomsByCode.get(analyticsMatch[1]) ?? roomsById.get(analyticsMatch[1]);
       if (!record) {
@@ -79,6 +93,11 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
         const payload = asRecord(body);
         const collegeId = requiredString(payload.collegeId, "collegeId");
         const requestedQuestionSetId = requiredString(payload.questionSetId ?? BOOKLET_2026_QUESTION_SET.id, "questionSetId");
+        if (payload.teamMode !== undefined && typeof payload.teamMode !== "boolean") throw new Error("teamMode must be a boolean");
+        if (payload.clutchRound !== undefined && typeof payload.clutchRound !== "boolean") throw new Error("clutchRound must be a boolean");
+        const teamMode = payload.teamMode === true;
+        const teams = parseTeams(payload.teams);
+        if (teamMode && teams.length < 2) throw new Error("A team contest requires at least two teams");
         let questionSetId = requestedQuestionSetId;
         const customQuestions = payload.customQuestions === undefined ? [] : parseQuestions(payload.customQuestions);
         if (customQuestions.length > 0) {
@@ -102,8 +121,7 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
         const roomId = randomUUID();
         const code = createRoomCode(roomsByCode);
         const hostToken = createToken("host");
-        const teams = parseTeams(payload.teams);
-        const room = engine.createRoom({ id: roomId, code, hostId: randomUUID(), collegeId, questionSetId, teamMode: payload.teamMode === true, teams, clutchRound: payload.clutchRound === true });
+        const room = engine.createRoom({ id: roomId, code, hostId: randomUUID(), collegeId, questionSetId, teamMode, teams, clutchRound: payload.clutchRound === true });
         const record = { roomId, code, hostToken } satisfies RoomRecord;
         roomsByCode.set(code, record);
         roomsById.set(roomId, record);
@@ -126,16 +144,18 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
     sendJson(response, 404, { error: "Not found" });
   });
 
-  const websocketServer = new WebSocketServer({ server: httpServer });
+  const websocketServer = new WebSocketServer({ server: httpServer, maxPayload: 64 * 1024 });
   websocketServer.on("connection", (socket) => {
     const client: ConnectedClient = { socket };
     clients.add(client);
     socket.on("message", (raw) => handleClientMessage(client, raw.toString()));
     socket.on("close", () => {
       clients.delete(client);
-      if (client.roomId && client.playerId) {
-        try { engine.disconnect(client.roomId, client.playerId); } catch { /* room may have expired */ }
-        broadcastSnapshot(client.roomId);
+      const roomId = client.roomId;
+      const playerId = client.playerId;
+      if (roomId && playerId && ![...clients].some((candidate) => candidate.roomId === roomId && candidate.playerId === playerId)) {
+        try { engine.disconnect(roomId, playerId); } catch { /* room may have expired */ }
+        broadcastSnapshot(roomId);
       }
     });
     socket.on("error", () => socket.close());
@@ -143,21 +163,32 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
 
   function handleClientMessage(client: ConnectedClient, raw: string): void {
     try {
-      const event = JSON.parse(raw) as ClientEvent;
+      const event = parseClientEvent(JSON.parse(raw));
       if (event.type === "room.join") {
         const record = roomsByCode.get(event.roomCode.toUpperCase());
         if (!record) throw new Error("Room not found");
         const previousRoomId = client.roomId;
         const previousPlayerId = client.playerId;
-        if (previousRoomId && previousPlayerId && previousRoomId !== record.roomId) {
-          engine.disconnect(previousRoomId, previousPlayerId);
-          broadcastSnapshot(previousRoomId);
-        }
         const joined = engine.joinRoom(record.roomId, event.displayName, event.collegeId, event.sessionToken, undefined, event.teamId);
+        for (const existingClient of clients) {
+          if (existingClient === client || existingClient.roomId !== record.roomId || existingClient.playerId !== joined.player.id) continue;
+          existingClient.roomId = undefined;
+          existingClient.playerId = undefined;
+          existingClient.sessionToken = undefined;
+          existingClient.isHost = false;
+          existingClient.socket.close(4001, "Session connected elsewhere");
+        }
         client.roomId = record.roomId;
         client.playerId = joined.player.id;
         client.sessionToken = joined.player.sessionToken;
         client.isHost = event.hostToken === record.hostToken;
+        if (previousRoomId && previousPlayerId && (previousRoomId !== record.roomId || previousPlayerId !== joined.player.id)) {
+          const previousPlayerStillConnected = [...clients].some((candidate) => candidate !== client && candidate.roomId === previousRoomId && candidate.playerId === previousPlayerId);
+          if (!previousPlayerStillConnected) {
+            try { engine.disconnect(previousRoomId, previousPlayerId); } catch { /* room may have expired */ }
+            broadcastSnapshot(previousRoomId);
+          }
+        }
         send(client, { type: "player.reconnected", payload: { playerId: joined.player.id, sessionToken: joined.player.sessionToken, hostToken: client.isHost ? record.hostToken : undefined } });
         send(client, { type: "room.snapshot", payload: engine.snapshot(record.roomId, joined.player.id) });
         broadcastSnapshot(record.roomId);
@@ -293,6 +324,7 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
         if (record.timer) clearTimeout(record.timer);
         if (record.advanceTimer) clearTimeout(record.advanceTimer);
       }
+      for (const client of clients) client.socket.close(1001, "Server shutting down");
       websocketServer.close();
       return new Promise<void>((resolve, reject) => httpServer.close((error) => error ? reject(error) : resolve()));
     },
@@ -339,9 +371,9 @@ function requiredString(value: unknown, field: string): string {
 
 function createRoomCode(existing: Map<string, RoomRecord>): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     let code = "";
-    for (let index = 0; index < 6; index += 1) code += alphabet[Math.floor(Math.random() * alphabet.length)];
+    for (let index = 0; index < 6; index += 1) code += alphabet[randomInt(alphabet.length)];
     if (!existing.has(code)) return code;
   }
   throw new Error("Could not allocate a room code");
@@ -382,11 +414,14 @@ function generateQuestionDrafts(topic: Question["topic"], difficulty: Question["
 function parseTeams(value: unknown): Pick<Team, "id" | "name">[] {
     if (value === undefined) return [];
     if (!Array.isArray(value) || value.length > 10) throw new Error("teams must be an array with at most 10 teams");
-    return value.map((team, index) => {
+    const teams = value.map((team, index) => {
       const item = asRecord(team);
       const name = requiredString(item.name, `teams[${index}].name`);
+      if (name.length > 40 || /[\u0000-\u001f\u007f]/.test(name)) throw new Error(`teams[${index}].name must be 1 to 40 characters`);
       return { id: `team-${index + 1}`, name };
     });
+    if (new Set(teams.map((team) => team.name.toLowerCase())).size !== teams.length) throw new Error("Team names must be unique");
+    return teams;
 }
 
 function parseQuestions(value: unknown): Question[] {
@@ -411,7 +446,7 @@ function parseQuestions(value: unknown): Question[] {
         correctOptionId,
         topic,
         difficulty,
-        timeLimitMs: typeof item.timeLimitMs === "number" && item.timeLimitMs >= 5000 && item.timeLimitMs <= 300000 ? item.timeLimitMs : 300000,
+        timeLimitMs: parseTimeLimit(item.timeLimitMs, index),
         imageUrl: typeof item.imageUrl === "string" ? item.imageUrl : undefined,
         tableMarkdown: typeof item.tableMarkdown === "string" ? item.tableMarkdown : undefined,
         explanation: typeof item.explanation === "string" ? item.explanation : undefined,
@@ -419,4 +454,47 @@ function parseQuestions(value: unknown): Question[] {
     });
     if (new Set(questions.map((question) => question.id)).size !== questions.length) throw new Error("customQuestions contains duplicate question IDs");
     return questions;
+}
+
+function parseTimeLimit(value: unknown, questionIndex: number): number {
+  if (value === undefined) return 300_000;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 5_000 || value > 300_000) {
+    throw new Error(`customQuestions[${questionIndex}].timeLimitMs must be an integer from 5000 to 300000`);
+  }
+  return value;
+}
+
+function parseClientEvent(value: unknown): ClientEvent {
+  const payload = asRecord(value);
+  const type = requiredString(payload.type, "type");
+  if (type === "room.join") {
+    return {
+      type,
+      roomCode: requiredString(payload.roomCode, "roomCode"),
+      displayName: requiredString(payload.displayName, "displayName"),
+      collegeId: requiredString(payload.collegeId, "collegeId"),
+      sessionToken: optionalString(payload.sessionToken, "sessionToken"),
+      teamId: optionalString(payload.teamId, "teamId"),
+      hostToken: optionalString(payload.hostToken, "hostToken"),
+    };
+  }
+  if (type === "game.start") return { type, roomId: requiredString(payload.roomId, "roomId") };
+  if (type === "answer.submit") {
+    const answer = asRecord(payload.payload);
+    return {
+      type,
+      payload: {
+        roomId: requiredString(answer.roomId, "payload.roomId"),
+        questionId: requiredString(answer.questionId, "payload.questionId"),
+        optionId: requiredString(answer.optionId, "payload.optionId"),
+      },
+    };
+  }
+  throw new Error("Unsupported event");
+}
+
+function optionalString(value: unknown, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${field} must be a non-empty string`);
+  return value.trim();
 }
