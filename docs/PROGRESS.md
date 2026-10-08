@@ -10,9 +10,10 @@ Last updated: 2026-10-08.
 - Persisted room completion timestamps and made weekly/monthly college league queries filter completed rooms by the requested period.
 - Prevented custom question IDs from colliding with IDs in the selected starter question set.
 - Preserved built-in question sets when restoring persisted custom state.
+- Hardened scoring, duplicate answer handling, restored room state, host analytics and round-advance timers against defensive edge cases.
 - Made question-generator request failures visible in the web UI and ensured loading state always resets.
-- Added regression tests for unanswered submissions and league period filtering.
-- Verified with `npm run typecheck`, `npm run test:engine` (10 passing tests), and `npm run build --workspace @aptiquiz/web`.
+- Added regression tests for unanswered submissions, league period filtering, non-finite scoring inputs, duplicate player IDs and empty host analytics.
+- Verified with `npm run typecheck`, `npm run test:engine` (13 passing tests), and `npm run build --workspace @aptiquiz/web`.
 
 ## Completed
 
