@@ -194,6 +194,7 @@ export interface PublicRoom {
   players: PublicPlayer[];
   teamMode: boolean;
   teams: Team[];
+  clutchRound: boolean;
 }
 
 export interface GameSnapshot {

@@ -332,27 +332,29 @@ function createRoomCode(existing: Map<string, RoomRecord>): string {
     for (let index = 0; index < 6; index += 1) code += alphabet[Math.floor(Math.random() * alphabet.length)];
     if (!existing.has(code)) return code;
   }
+  throw new Error("Could not allocate a room code");
+}
 
-  function createToken(prefix: string): string {
-    return `${prefix}-${randomBytes(18).toString("hex")}`;
+function createToken(prefix: string): string {
+  return `${prefix}-${randomBytes(18).toString("hex")}`;
+}
+
+function loadServerState(path: string): RoomRecord[] {
+  if (!existsSync(path)) return [];
+  try {
+    const state = JSON.parse(readFileSync(path, "utf8")) as RoomRecord[];
+    return state.filter((record) => typeof record.roomId === "string" && typeof record.code === "string" && typeof record.hostToken === "string");
+  } catch (error) {
+    throw new Error(`Could not restore server state: ${error instanceof Error ? error.message : "invalid state file"}`);
   }
+}
 
-  function loadServerState(path: string): RoomRecord[] {
-    if (!existsSync(path)) return [];
-    try {
-      const state = JSON.parse(readFileSync(path, "utf8")) as RoomRecord[];
-      return state.filter((record) => typeof record.roomId === "string" && typeof record.code === "string" && typeof record.hostToken === "string");
-    } catch (error) {
-      throw new Error(`Could not restore server state: ${error instanceof Error ? error.message : "invalid state file"}`);
-    }
-  }
+function persistServerState(path: string, records: Pick<RoomRecord, "roomId" | "code" | "hostToken">[]): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(records), "utf8");
+}
 
-  function persistServerState(path: string, records: Pick<RoomRecord, "roomId" | "code" | "hostToken">[]): void {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(records), "utf8");
-  }
-
-  function generateQuestionDrafts(topic: Question["topic"], difficulty: Question["difficulty"], count: number): Question[] {
+function generateQuestionDrafts(topic: Question["topic"], difficulty: Question["difficulty"], count: number): Question[] {
     const templates: Record<Question["topic"], (index: number) => { text: string; options: string[]; correct: number; explanation: string }> = {
       quantitative: (index) => ({ text: `Practice ${index + 1}: What is the next number in the sequence 3, 6, 12, 24, ?`, options: ["36", "42", "48", "54"], correct: 2, explanation: "Each term is multiplied by two." }),
       logical: (index) => ({ text: `Logic ${index + 1}: If all A are B and all B are C, which statement must be true?`, options: ["All C are A", "All A are C", "No A are C", "Some C are not B"], correct: 1, explanation: "The transitive relationship means every A is also a C." }),
@@ -363,9 +365,9 @@ function createRoomCode(existing: Map<string, RoomRecord>): string {
       const draft = templates[topic](index);
       return { id: `generated-${randomUUID()}`, text: draft.text, options: draft.options.map((text, optionIndex) => ({ id: String.fromCharCode(97 + optionIndex), text })), correctOptionId: String.fromCharCode(97 + draft.correct), topic, difficulty, timeLimitMs: difficulty === "hard" ? 15000 : difficulty === "easy" ? 25000 : 20000, explanation: draft.explanation };
     });
-  }
+}
 
-  function parseTeams(value: unknown): Pick<Team, "id" | "name">[] {
+function parseTeams(value: unknown): Pick<Team, "id" | "name">[] {
     if (value === undefined) return [];
     if (!Array.isArray(value) || value.length > 10) throw new Error("teams must be an array with at most 10 teams");
     return value.map((team, index) => {
@@ -373,9 +375,9 @@ function createRoomCode(existing: Map<string, RoomRecord>): string {
       const name = requiredString(item.name, `teams[${index}].name`);
       return { id: `team-${index + 1}`, name };
     });
-  }
+}
 
-  function parseQuestions(value: unknown): Question[] {
+function parseQuestions(value: unknown): Question[] {
     if (!Array.isArray(value) || value.length > 50) throw new Error("customQuestions must be an array with at most 50 questions");
     const questions = value.map((candidate, index) => {
       const item = asRecord(candidate);
@@ -405,6 +407,4 @@ function createRoomCode(existing: Map<string, RoomRecord>): string {
     });
     if (new Set(questions.map((question) => question.id)).size !== questions.length) throw new Error("customQuestions contains duplicate question IDs");
     return questions;
-  }
-  throw new Error("Could not allocate a room code");
 }
