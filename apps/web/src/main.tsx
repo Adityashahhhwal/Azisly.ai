@@ -200,8 +200,13 @@ function App() {
 
   return (
     <main className={lightTheme ? "app-shell light-theme" : "app-shell"}>
+      <div className="shape-field" aria-hidden="true">
+        <span className="float-cube"><span className="cube-face cube-front" /><span className="cube-face cube-back" /><span className="cube-face cube-right" /><span className="cube-face cube-left" /><span className="cube-face cube-top" /><span className="cube-face cube-bottom" /></span>
+        <span className="float-sphere" />
+        <span className="float-pyramid" />
+      </div>
       <header className="topbar">
-        <div className="brand-lockup"><span className="brand-mark">A</span><span>AptiQuiz</span></div>
+        <div className="brand-lockup"><span className="brand-mark">A</span><span>Apti<span className="brand-accent">Quiz</span></span></div>
         <div className="topbar-actions"><button className="theme-toggle" onClick={() => setLightTheme((current) => !current)}>{lightTheme ? "Dark" : "Light"} mode</button><div className="status-pill"><span className={connected ? "status-dot online" : "status-dot"} />{reconnecting ? "Reconnecting..." : connected ? "Live arena" : "Not connected"}</div></div>
       </header>
       <nav className="dashboard-nav" aria-label="Main navigation">{(["live", "practice", "generator", "analytics", "leaderboard", "league", "achievements", "profile"] as Section[]).map((item) => <button key={item} className={section === item ? "nav-item active" : "nav-item"} onClick={() => changeSection(item)}>{item === "live" ? "Live Quiz" : item === "generator" ? "AI Generator" : item === "leaderboard" ? "Leaderboard" : item === "league" ? "College League" : item[0].toUpperCase() + item.slice(1)}</button>)}</nav>
