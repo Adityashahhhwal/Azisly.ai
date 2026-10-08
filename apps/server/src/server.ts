@@ -58,7 +58,11 @@ export function createAptiQuizServer(options: ServerOptions = {}) {
     }
     const publicRoomMatch = request.method === "GET" ? pathname.match(/^\/rooms\/([^/]+)$/) : undefined;
     if (publicRoomMatch) {
-      const lookup = decodeURIComponent(publicRoomMatch[1]);
+      let lookup: string;
+      try { lookup = decodeURIComponent(publicRoomMatch[1]); } catch {
+        sendJson(response, 400, { error: "Invalid room code" });
+        return;
+      }
       const record = roomsByCode.get(lookup.toUpperCase()) ?? roomsById.get(lookup);
       if (!record) {
         sendJson(response, 404, { error: "Room not found" });

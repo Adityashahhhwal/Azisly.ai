@@ -111,6 +111,13 @@ function App() {
       setConnected(true);
       setReconnecting(false);
     };
+    const onError = () => {
+      setConnected(false);
+      if (!sessionRef.current) {
+        setIsJoining(false);
+        setError("Could not connect to the game server. Check that it is running and try again.");
+      }
+    };
     const onClose = (event: CloseEvent) => {
       setConnected(false);
       setIsJoining(false);
@@ -126,6 +133,8 @@ function App() {
           reconnectTimerRef.current = undefined;
           join(roomCodeRef.current);
         }, 1000);
+      } else if (event.code !== 1000) {
+        setError("The game server disconnected. Check your connection and try again.");
       }
     };
     const onMessage = (message: MessageEvent<string>) => {
@@ -194,10 +203,12 @@ function App() {
       }
     };
     socket.addEventListener("open", onOpen);
+    socket.addEventListener("error", onError);
     socket.addEventListener("close", onClose);
     socket.addEventListener("message", onMessage);
     return () => {
       socket.removeEventListener("open", onOpen);
+      socket.removeEventListener("error", onError);
       socket.removeEventListener("close", onClose);
       socket.removeEventListener("message", onMessage);
     };
@@ -267,7 +278,10 @@ function App() {
     });
     const sendJoin = () => {
       if (active.readyState === WebSocket.OPEN) active.send(message);
-      else setIsJoining(false);
+      else {
+        setIsJoining(false);
+        setError("The game server connection closed before the contest join completed.");
+      }
     };
     if (active.readyState === WebSocket.OPEN) sendJoin();
     else if (active.readyState === WebSocket.CONNECTING) active.addEventListener("open", sendJoin, { once: true });
@@ -591,6 +605,25 @@ function writeStorage(key: string, value: string): void {
 
 function removeStorage(key: string): void {
   try { window.sessionStorage.removeItem(key); } catch { /* storage may be unavailable */ }
+}
+
+function migrateLegacyStorage(): void {
+  try {
+    const tabStorage = window.sessionStorage;
+    if (tabStorage.getItem("aptiquiz-storage-migrated")) return;
+    const legacySession = window.localStorage.getItem("aptiquiz-session");
+    const legacySessionRoom = window.localStorage.getItem("aptiquiz-session-room");
+    const legacyHostToken = window.localStorage.getItem("aptiquiz-host-token");
+    const legacyHostRoom = window.localStorage.getItem("aptiquiz-host-room");
+    if (legacySession && legacySessionRoom) tabStorage.setItem(`aptiquiz-session:${legacySessionRoom}`, legacySession);
+    else if (legacySession) tabStorage.setItem("aptiquiz-session", legacySession);
+    if (legacyHostToken && legacyHostRoom) tabStorage.setItem(`aptiquiz-host-token:${legacyHostRoom}`, legacyHostToken);
+    else if (legacyHostToken) tabStorage.setItem("aptiquiz-host-token", legacyHostToken);
+    if (legacySessionRoom) tabStorage.setItem("aptiquiz-session-room", legacySessionRoom);
+    if (legacyHostRoom) tabStorage.setItem("aptiquiz-host-room", legacyHostRoom);
+    tabStorage.setItem("aptiquiz-storage-migrated", "1");
+    for (const key of ["aptiquiz-session", "aptiquiz-session-room", "aptiquiz-host-token", "aptiquiz-host-room"]) window.localStorage.removeItem(key);
+  } catch { /* storage may be unavailable */ }
 }
 
 migrateLegacyStorage();

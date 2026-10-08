@@ -56,7 +56,7 @@ When enabled, the final three questions are marked as a Clutch Round. The server
 
 ## Status
 
-The responsive React product now includes the live player flow plus dashboard navigation for Practice, AI Generator, Analytics, Leaderboard, College League, Achievements and Profile. It keeps the server-issued session and host tokens in local storage for reconnection and host control. Active room state, custom question sets, scores, sessions, analytics and league inputs are persisted to `.aptiquiz-data/` so a server restart can restore contests.
+The responsive React product now includes the live player flow plus dashboard navigation for Practice, AI Generator, Analytics, Leaderboard, College League, Achievements and Profile. It keeps server-issued session and host tokens in per-tab session storage, so refreshes can reconnect without making separate contestants in other tabs share an identity. Active room state, custom question sets, scores, sessions, analytics and league inputs are persisted to `.aptiquiz-data/` so a server restart can restore contests.
 
 Run the server with `npm run dev:server`, then run the web app with `npm run dev --workspace @aptiquiz/web`. Set `VITE_API_URL` and `VITE_WS_URL` when the server is not on `localhost:3001`.
 
