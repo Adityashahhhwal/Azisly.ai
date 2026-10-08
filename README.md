@@ -46,9 +46,17 @@ The room request can set `teamMode: true`, provide teams such as `[{ "name": "Re
 ## Cheating resistance
 Options are shuffled per player; correct answers are withheld until the round closes; only the current question is sent; room/player/question identity is validated; late and duplicate submissions are rejected; client scores and timestamps are ignored.
 
+## Adaptive practice and analytics
+
+The server tracks accuracy, response time and topic performance per player. After enough answers, it adjusts a server-owned difficulty signal and sends a small explanation such as “Difficulty increased”; the browser cannot choose difficulty or score. Snapshots include accuracy, average response time, correct/incorrect counts, topic strengths and weaknesses, recommendations and a 0-100 placement-readiness score.
+
+The dashboard includes post-quiz insights, performance radar-style visualization, speed-versus-accuracy metrics, earned badges, a host analytics endpoint (`GET /rooms/:id/analytics` with `x-host-token`), an AI-assisted draft generator (`POST /question-generator`), and a college league endpoint (`GET /league?period=weekly|monthly|all-time`). The current generator is deliberately deterministic and review-first so no external API key is needed; it can be replaced by an LLM provider behind the same endpoint.
+
+When enabled, the final three questions are marked as a Clutch Round. The server applies a 1.5x correct-answer multiplier, and the client displays the rule without controlling it.
+
 ## Status
 
-The desktop-first React player flow is now wired to the local HTTP/WebSocket server: create or join a room, see the lobby, play timed questions, review round results and view the leaderboard. The UI keeps the server-issued session and host tokens in local storage for reconnection and host control. A full host authoring/moderation surface, phone optimization and the 50-player simulator remain before deployment.
+The responsive React product now includes the live player flow plus dashboard navigation for Practice, AI Generator, Analytics, Leaderboard, College League, Achievements and Profile. It keeps the server-issued session and host tokens in local storage for reconnection and host control. Persistent database storage, a richer host moderation workflow and the 50-player simulator remain before deployment.
 
 Run the server with `npm run dev:server`, then run the web app with `npm run dev --workspace @aptiquiz/web`. Set `VITE_API_URL` and `VITE_WS_URL` when the server is not on `localhost:3001`.
 

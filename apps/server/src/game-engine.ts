@@ -17,6 +17,7 @@ import type {
   Topic,
   TopicPerformance,
   HostAnalytics,
+  CollegeLeagueEntry,
 } from "@aptiquiz/contracts";
 import { buildLeaderboard, calculateAnswerResult, toPlayerQuestion } from "@aptiquiz/game-rules";
 
@@ -109,7 +110,7 @@ export class GameEngine {
     return this.publicRoom(room);
   }
 
-  joinRoom(roomId: string, displayName: string, collegeId: string, sessionToken?: string, playerId = `player-${this.rooms.get(roomId)?.players.length ?? 0 + 1}`, teamId?: string): JoinResult {
+  joinRoom(roomId: string, displayName: string, collegeId: string, sessionToken?: string, playerId = `player-${(this.rooms.get(roomId)?.players.length ?? 0) + 1}`, teamId?: string): JoinResult {
     const room = this.getRoom(roomId);
     if (!displayName.trim()) throw new Error("Display name is required");
     if (room.phase !== "lobby" && !sessionToken) throw new Error("The game has already started");
@@ -247,6 +248,7 @@ export class GameEngine {
         topics[topic].correct += player.topicStats[topic].correct;
         topics[topic].totalResponseTimeMs += player.topicStats[topic].totalResponseTimeMs;
       }
+
     }
     const entries = [...room.questionStats.entries()].map(([questionId, stats]) => ({ questionId, stats }));
     const questionSet = this.getQuestionSet(room.questionSetId);
@@ -267,6 +269,22 @@ export class GameEngine {
       mostCommonIncorrectOption: optionCounts,
       topics,
     };
+  }
+
+  collegeLeague(period: CollegeLeagueEntry["period"] = "all-time"): CollegeLeagueEntry[] {
+    const byCollege = new Map<string, { points: number; participants: Set<string> }>();
+    for (const room of this.rooms.values()) {
+      if (room.phase !== "complete") continue;
+      const current = byCollege.get(room.collegeId) ?? { points: 0, participants: new Set<string>() };
+      for (const player of room.players) {
+        current.points += player.totalScore;
+        current.participants.add(`${room.id}:${player.id}`);
+      }
+      byCollege.set(room.collegeId, current);
+    }
+    return [...byCollege.entries()]
+      .sort((left, right) => right[1].points - left[1].points)
+      .map(([collegeId, entry], index) => ({ rank: index + 1, collegeId, points: entry.points, participants: entry.participants.size, period }));
   }
 
   private startQuestion(room: InternalRoom, questionIndex: number, startedAtMs: number): PlayerQuestion {

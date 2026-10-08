@@ -27,6 +27,9 @@ Last updated: 2026-10-08.
 - [x] Build the desktop-first web player flow and connect it to HTTP/WebSocket transport.
 - [x] Allocate unique room PINs and private host tokens, with host-only game start.
 - [x] Support validated custom questions and optional team rooms with individual/team leaderboards.
+- [x] Add server-authoritative adaptive difficulty signals, player analytics, readiness scoring and weakness recommendations.
+- [x] Add clutch rounds, host analytics/export endpoint, AI-assisted question drafts and college league endpoint.
+- [x] Add responsive dashboard navigation, post-quiz insights, badges and reconnection status UI.
 - [ ] Build the host authoring and moderation interfaces.
 - [ ] Optimize the player UI for phones after the desktop flow is stable.
 - [ ] Add the 50-player simulator under `scripts/simulate-50-players`.

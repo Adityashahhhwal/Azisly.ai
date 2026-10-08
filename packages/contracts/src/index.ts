@@ -86,6 +86,14 @@ export interface HostAnalytics {
   topics: Record<Topic, TopicPerformance>;
 }
 
+export interface CollegeLeagueEntry {
+  rank: number;
+  collegeId: string;
+  points: number;
+  participants: number;
+  period: "weekly" | "monthly" | "all-time";
+}
+
 export interface Team {
   id: string;
   name: string;
