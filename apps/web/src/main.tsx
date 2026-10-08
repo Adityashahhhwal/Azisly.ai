@@ -410,7 +410,7 @@ function App() {
           {section === "live" && <>
             {view === "join" && <JoinView displayName={displayName} setDisplayName={setDisplayName} roomCode={roomCode} setRoomCode={setRoomCode} collegeId={collegeId} setCollegeId={setCollegeId} teamId={teamId} setTeamId={setTeamId} roomTeams={roomTeams} roomLookupPending={roomLookupPending} teamMode={teamMode} setTeamMode={setTeamMode} teamNames={teamNames} setTeamNames={setTeamNames} clutchRound={clutchRound} setClutchRound={setClutchRound} customQuestions={customQuestions} setCustomQuestions={setCustomQuestions} onJoin={() => join()} onCreate={() => void createRoom()} isCreating={isCreating} isJoining={isJoining} />}
             {view === "lobby" && snapshot && <LobbyView snapshot={snapshot} isHost={isHost} onStart={startGame} />}
-            {view === "question" && question && <QuestionView question={question} lastAnswer={lastAnswer} adaptiveMessage={adaptiveMessage || snapshot?.adaptiveMessage} onAnswer={submitAnswer} />}
+            {view === "question" && question && <QuestionView question={question} lastAnswer={lastAnswer} hasAnswered={snapshot?.hasAnsweredCurrentQuestion ?? Boolean(lastAnswer)} adaptiveMessage={adaptiveMessage || snapshot?.adaptiveMessage} onAnswer={submitAnswer} />}
             {view === "results" && roundResult && <ResultsView result={roundResult} analytics={snapshot?.analytics} onWait={() => setView("lobby")} />}
             {view === "complete" && <CompleteView leaderboard={leaderboard} analytics={snapshot?.analytics} onPracticeAgain={startPractice} />}
           </>}
@@ -472,7 +472,7 @@ function LobbyView({ snapshot, isHost, onStart }: { snapshot: GameSnapshot; isHo
   </div>;
 }
 
-function QuestionView({ question, lastAnswer, adaptiveMessage, onAnswer }: { question: PlayerQuestion; lastAnswer?: AnswerResult; adaptiveMessage?: string; onAnswer: (optionId: string) => void }) {
+function QuestionView({ question, lastAnswer, hasAnswered, adaptiveMessage, onAnswer }: { question: PlayerQuestion; lastAnswer?: AnswerResult; hasAnswered: boolean; adaptiveMessage?: string; onAnswer: (optionId: string) => void }) {
   const [remaining, setRemaining] = useState(Math.ceil((question.deadlineMs - Date.now()) / 1000));
   useEffect(() => {
     const timer = window.setInterval(() => setRemaining(Math.max(0, Math.ceil((question.deadlineMs - Date.now()) / 1000))), 250);
@@ -484,7 +484,10 @@ function QuestionView({ question, lastAnswer, adaptiveMessage, onAnswer }: { que
     {adaptiveMessage && <div className="adaptive-banner">✦ {adaptiveMessage}</div>}
     <div className="timer-block"><span className="timer-label">TIME LEFT</span><strong>{String(Math.floor(remaining / 60)).padStart(2, "0")}:{String(remaining % 60).padStart(2, "0")}</strong><div className="timer-track"><span style={{ width: `${progress}%` }} /></div></div>
     <h2 className="question-text">{question.text}</h2>
-    <div className="options-grid">{question.options.map((option, index) => <button className={`option-button ${lastAnswer ? "answered" : ""}`} disabled={Boolean(lastAnswer)} onClick={() => onAnswer(option.id)} key={option.id}><span className="option-key">{String.fromCharCode(65 + index)}</span><span>{option.text}</span></button>)}</div>
+    {question.imageUrl && <img className="question-image" src={question.imageUrl} alt="Question reference" />}
+    {question.tableMarkdown && <pre className="question-table">{question.tableMarkdown}</pre>}
+    {hasAnswered && !lastAnswer && <div className="adaptive-banner">Answer received. Waiting for the round to finish.</div>}
+    <div className="options-grid">{question.options.map((option, index) => <button className={`option-button ${hasAnswered ? "answered" : ""}`} disabled={hasAnswered} onClick={() => onAnswer(option.id)} key={option.id}><span className="option-key">{String.fromCharCode(65 + index)}</span><span>{option.text}</span></button>)}</div>
     <div className="server-note"><span className="server-icon">◉</span> The server is the referee. Your answer is scored when it reaches the arena.</div>
   </div>;
 }
@@ -493,6 +496,7 @@ function ResultsView({ result, analytics, onWait }: { result: RoundResult; analy
   return <div className="panel results-panel">
     <div className="eyebrow">ROUND COMPLETE</div><h2>Nice work. Here’s the breakdown.</h2>
     <div className="answer-reveal">Correct answer <strong>{result.correctOptionId.toUpperCase()}</strong></div>
+    {result.explanation && <p className="answer-explanation">{result.explanation}</p>}
     <div className="result-list">{result.results.map((answer) => <div className="result-row" key={answer.playerId}><span>{answer.playerId}</span><span className={answer.correct ? "correct" : "muted"}>{answer.correct ? `+${answer.score}` : "No points"}</span></div>)}</div>
     <button className="secondary-button wide" onClick={onWait}>View leaderboard <span>→</span></button>
     {analytics && <AnalyticsSummary analytics={analytics} />}

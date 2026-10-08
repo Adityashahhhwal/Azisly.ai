@@ -121,6 +121,8 @@ export interface PlayerQuestion {
   questionId: string;
   text: string;
   options: QuestionOption[];
+  imageUrl?: string;
+  tableMarkdown?: string;
   topic: Topic;
   difficulty: Difficulty;
   timeLimitMs: number;
@@ -168,6 +170,7 @@ export interface RoundResult {
   correctOptionId: string;
   results: AnswerResult[];
   leaderboard: LeaderboardEntry[];
+  explanation?: string;
 }
 
 export interface PublicPlayer {
@@ -200,6 +203,7 @@ export interface PublicRoom {
 export interface GameSnapshot {
   room: PublicRoom;
   currentQuestion?: PlayerQuestion;
+  hasAnsweredCurrentQuestion: boolean;
   leaderboard: LeaderboardEntry[];
   teamLeaderboard: TeamLeaderboardEntry[];
   analytics: PlayerAnalytics;

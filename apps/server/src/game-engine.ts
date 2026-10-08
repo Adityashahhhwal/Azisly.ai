@@ -265,6 +265,7 @@ export class GameEngine {
     return {
       room: this.publicRoom(room),
       currentQuestion,
+      hasAnsweredCurrentQuestion: player ? room.answeredByPlayer.has(player.id) : false,
       leaderboard,
       teamLeaderboard: this.teamLeaderboard(room),
       analytics: player ? this.analyticsFor(player) : emptyAnalytics(),
@@ -429,6 +430,7 @@ export class GameEngine {
       correctOptionId: question.correctOptionId,
       results,
       leaderboard,
+      explanation: question.explanation,
     };
     room.lastRoundResult = roundResult;
     return roundResult;

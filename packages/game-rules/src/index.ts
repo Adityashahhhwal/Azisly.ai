@@ -95,6 +95,8 @@ export function toPlayerQuestion(question: Question, startedAtMs: number, isClut
     questionId: question.id,
     text: question.text,
     options: question.options,
+    imageUrl: question.imageUrl,
+    tableMarkdown: question.tableMarkdown,
     topic: question.topic,
     difficulty: question.difficulty,
     timeLimitMs: question.timeLimitMs,
